@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { AppData } from './types';
-import { seedData } from './seed';
+import { normalizeAppData, seedData } from './seed';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 
 const STORAGE_KEY = 'sweet-dreams-gestao-v1';
@@ -13,7 +13,7 @@ type CloudStatus = 'local' | 'connecting' | 'saving' | 'synced' | 'error';
 function safeParse(raw: string | null): AppData | null {
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as AppData;
+    return normalizeAppData(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -107,7 +107,7 @@ export function useAppData() {
       }
 
       if (row?.data && Object.keys(row.data as object).length > 0) {
-        const incoming = row.data as AppData;
+        const incoming = normalizeAppData(row.data);
         const json = JSON.stringify(incoming);
         lastCloudJsonRef.current = json;
         applyingRemoteRef.current = true;
@@ -147,12 +147,13 @@ export function useAppData() {
           if (!active) return;
           const nextRow = payload.new as { data?: AppData };
           if (!nextRow?.data) return;
-          const incomingJson = JSON.stringify(nextRow.data);
+          const normalized = normalizeAppData(nextRow.data);
+          const incomingJson = JSON.stringify(normalized);
           const currentJson = JSON.stringify(dataRef.current);
           lastCloudJsonRef.current = incomingJson;
           if (incomingJson !== currentJson) {
             applyingRemoteRef.current = true;
-            setData(nextRow.data);
+            setData(normalized);
           }
           setCloudStatus('synced');
         },
@@ -181,7 +182,7 @@ export function useAppData() {
 
       if (error || !row?.data) return;
 
-      const incoming = row.data as AppData;
+      const incoming = normalizeAppData(row.data);
       const incomingJson = JSON.stringify(incoming);
       if (incomingJson !== currentJson) {
         lastCloudJsonRef.current = incomingJson;
@@ -264,7 +265,7 @@ export function useAppData() {
       },
       importJson: async (file: File) => {
         const text = await file.text();
-        setData(JSON.parse(text) as AppData);
+        setData(normalizeAppData(JSON.parse(text)));
       },
     }),
     [data],

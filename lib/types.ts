@@ -43,6 +43,7 @@ export type Order = {
   paymentMethod: PaymentMethod;
   source: OrderSource;
   paid: boolean;
+  paidAt?: string;
   address?: string;
   notes?: string;
 };
@@ -72,6 +73,7 @@ export type Purchase = {
   store: string;
   total: number;
   source: 'Manual' | 'NFC-e' | 'XML';
+  paymentMethod?: PaymentMethod;
   accessKey?: string;
   qrUrl?: string;
   items: PurchaseItem[];
@@ -84,6 +86,39 @@ export type Expense = {
   description: string;
   amount: number;
   recurring: boolean;
+  paymentMethod?: PaymentMethod;
+  payee?: string;
+};
+
+export type FinanceTransactionType = 'Entrada' | 'Saída' | 'Ajuste';
+export type FinanceTransactionSource = 'Manual' | 'Pedido' | 'Compra' | 'Despesa' | 'Ajuste';
+
+export type FinanceTransaction = {
+  id: string;
+  date: string;
+  createdAt: string;
+  type: FinanceTransactionType;
+  description: string;
+  person?: string;
+  amount: number;
+  paymentMethod: PaymentMethod;
+  source: FinanceTransactionSource;
+  sourceId?: string;
+};
+
+export type ProfitShare = {
+  id: string;
+  name: string;
+  percentage: number;
+};
+
+export type FinanceState = {
+  initialBalance: number;
+  initialBalanceSet: boolean;
+  initialBalanceDate?: string;
+  baselineSourceIds: string[];
+  manualTransactions: FinanceTransaction[];
+  profitShares: ProfitShare[];
 };
 
 export type AppSettings = {
@@ -101,5 +136,6 @@ export type AppData = {
   batches: Batch[];
   purchases: Purchase[];
   expenses: Expense[];
+  finance: FinanceState;
   settings: AppSettings;
 };

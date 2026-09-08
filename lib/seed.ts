@@ -1,10 +1,23 @@
-import type { AppData } from './types';
+import type { AppData, FinanceState } from './types';
 import { today } from './utils';
 
 const morango = 'ing-morango';
 const chocolate = 'ing-chocolate';
 const embalagem = 'ing-emb';
 const product = 'prod-morango';
+
+export const defaultFinance: FinanceState = {
+  initialBalance: 0,
+  initialBalanceSet: false,
+  initialBalanceDate: undefined,
+  baselineSourceIds: [],
+  manualTransactions: [],
+  profitShares: [
+    { id: 'share-company', name: 'Empresa', percentage: 40 },
+    { id: 'share-nicoly', name: 'Nicoly', percentage: 40 },
+    { id: 'share-rick', name: 'Rick', percentage: 20 },
+  ],
+};
 
 export const seedData: AppData = {
   ingredients: [
@@ -30,8 +43,9 @@ export const seedData: AppData = {
   batches: [],
   purchases: [],
   expenses: [
-    { id: 'exp-ads', date: today(), category: 'Anúncios', description: 'Campanha Meta Ads - Morango', amount: 49.99, recurring: false },
+    { id: 'exp-ads', date: today(), category: 'Anúncios', description: 'Campanha Meta Ads - Morango', amount: 49.99, recurring: false, paymentMethod: 'Outro', payee: 'Meta Ads' },
   ],
+  finance: defaultFinance,
   settings: {
     businessName: 'Sweet Dreams',
     monthlyMei: 0,
@@ -40,3 +54,31 @@ export const seedData: AppData = {
     cardFeePercent: 3.99,
   },
 };
+
+export function normalizeAppData(input: unknown): AppData {
+  const raw = input && typeof input === 'object' ? input as Partial<AppData> : {};
+  const finance = raw.finance && typeof raw.finance === 'object' ? raw.finance : defaultFinance;
+
+  return {
+    ingredients: Array.isArray(raw.ingredients) ? raw.ingredients : seedData.ingredients,
+    products: Array.isArray(raw.products) ? raw.products : seedData.products,
+    orders: Array.isArray(raw.orders) ? raw.orders.map(o => ({...o, paymentMethod:o.paymentMethod || 'Outro'})) : [],
+    batches: Array.isArray(raw.batches) ? raw.batches : [],
+    purchases: Array.isArray(raw.purchases) ? raw.purchases.map(p => ({...p, paymentMethod:p.paymentMethod || 'Outro'})) : [],
+    expenses: Array.isArray(raw.expenses) ? raw.expenses.map(e => ({...e, paymentMethod:e.paymentMethod || 'Outro'})) : [],
+    finance: {
+      initialBalance: Number(finance.initialBalance) || 0,
+      initialBalanceSet: Boolean(finance.initialBalanceSet),
+      initialBalanceDate: finance.initialBalanceDate,
+      baselineSourceIds: Array.isArray(finance.baselineSourceIds) ? finance.baselineSourceIds : [],
+      manualTransactions: Array.isArray(finance.manualTransactions) ? finance.manualTransactions : [],
+      profitShares: Array.isArray(finance.profitShares) && finance.profitShares.length
+        ? finance.profitShares
+        : defaultFinance.profitShares,
+    },
+    settings: {
+      ...seedData.settings,
+      ...(raw.settings || {}),
+    },
+  };
+}

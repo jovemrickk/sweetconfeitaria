@@ -6,11 +6,12 @@ import {
   BarChart3, ClipboardList, Factory, PackageOpen, ReceiptText, WalletCards, Settings,
   Plus, Search, CheckCircle2, Clock3, Truck, Trash2, Pencil, Camera, Upload, Download,
   ShoppingBasket, BadgeDollarSign, Boxes, TrendingUp, Users, Megaphone, X, Save, QrCode,
-  ChevronRight, AlertTriangle, CircleDollarSign, RotateCcw, Menu, Cloud, LogOut
+  ChevronRight, AlertTriangle, CircleDollarSign, RotateCcw, Menu, Cloud, LogOut,
+  ArrowDownLeft, ArrowUpRight, Landmark, LockKeyhole, Scale
 } from 'lucide-react';
 import { useAppData } from '@/lib/useAppData';
-import type { AppData, Batch, Expense, Ingredient, Order, OrderSource, OrderStatus, PaymentMethod, Product, Purchase, PurchaseItem, Unit } from '@/lib/types';
-import { brl, ingredientUnitCost, monthlyMetrics, orderTotal, productBatchCost, productUnitCost, today, uid } from '@/lib/utils';
+import type { AppData, Batch, Expense, FinanceTransaction, Ingredient, Order, OrderSource, OrderStatus, PaymentMethod, Product, Purchase, PurchaseItem, Unit } from '@/lib/types';
+import { autoFinanceSourceIds, brl, financeBalance, financeMonthSummary, financeTransactions, ingredientUnitCost, monthKey, monthlyMetrics, orderTotal, productBatchCost, productUnitCost, today, uid } from '@/lib/utils';
 import QrScanner from './QrScanner';
 import LoginPanel from './LoginPanel';
 import InstallPwaButton from './InstallPwaButton';
@@ -171,12 +172,13 @@ function Orders({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSta
       id:uid(), createdAt:draft.createdAt||today(), deliveryDate:draft.deliveryDate||today(), customer:draft.customer,
       phone:draft.phone||'', productId:draft.productId, quantity:Number(draft.quantity), unitPrice:Number(draft.unitPrice)||0,
       deliveryFee:Number(draft.deliveryFee)||0, status:(draft.status as OrderStatus)||'Novo', paymentMethod:(draft.paymentMethod as PaymentMethod)||'Pix',
-      source:(draft.source as OrderSource)||'WhatsApp', paid:!!draft.paid, address:draft.address, notes:draft.notes
+      source:(draft.source as OrderSource)||'WhatsApp', paid:!!draft.paid, paidAt:draft.paid ? today() : undefined, address:draft.address, notes:draft.notes
     };
     setData(d=>({...d,orders:[order,...d.orders]})); setForm(false);
-    setDraft({...draft,customer:'',phone:'',quantity:1,address:'',notes:''});
+    setDraft({...draft,customer:'',phone:'',quantity:1,address:'',notes:'',paid:false,paidAt:undefined});
   };
-  const updateStatus=(id:string, s:OrderStatus)=>setData(d=>({...d,orders:d.orders.map(o=>o.id===id?{...o,status:s}:o)}));
+  const updateStatus=(id:string, status:OrderStatus)=>setData(d=>({...d,orders:d.orders.map(o=>o.id===id?{...o,status}:o)}));
+  const togglePaid=(id:string)=>setData(d=>({...d,orders:d.orders.map(o=>o.id===id?{...o,paid:!o.paid,paidAt:!o.paid?today():undefined}:o)}));
   const remove=(id:string)=>confirm('Excluir este pedido?')&&setData(d=>({...d,orders:d.orders.filter(o=>o.id!==id)}));
 
   return <section className="content">
@@ -184,18 +186,18 @@ function Orders({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSta
       <div className="search"><Search size={18}/><input placeholder="Buscar cliente ou telefone..." value={query} onChange={e=>setQuery(e.target.value)}/></div>
       <button className="primary" onClick={()=>setForm(true)}><Plus size={18}/> Novo pedido</button>
     </div>
-    <div className="filterPills">{(['Todos','Novo','Confirmado','Produção','Pronto','Saiu para entrega','Entregue'] as const).map(s=><button key={s} className={status===s?'active':''} onClick={()=>setStatus(s)}>{s}</button>)}</div>
+    <div className="filterPills">{(['Todos','Novo','Confirmado','Produção','Pronto','Saiu para entrega','Entregue'] as const).map(st=><button key={st} className={status===st?'active':''} onClick={()=>setStatus(st)}>{st}</button>)}</div>
     <div className="card tableCard">
-      <div className="tableWrap"><table><thead><tr><th>Cliente</th><th>Pedido</th><th>Entrega</th><th>Origem</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>
-        {filtered.map(o=><tr key={o.id}><td><strong>{o.customer}</strong><small>{o.phone||'sem telefone'}</small></td><td>{o.quantity}× {data.products.find(p=>p.id===o.productId)?.name||'Produto'}<small>{o.paid?'Pago':'Pendente'}</small></td><td>{new Date(`${o.deliveryDate}T12:00`).toLocaleDateString('pt-BR')}<small>{o.address||'Retirada / combinar'}</small></td><td>{o.source}</td><td><strong>{brl(orderTotal(o))}</strong><small>frete {brl(o.deliveryFee)}</small></td><td><select className="statusSelect" value={o.status} onChange={e=>updateStatus(o.id,e.target.value as OrderStatus)}>{['Novo','Confirmado','Produção','Pronto','Saiu para entrega','Entregue','Cancelado'].map(s=><option key={s}>{s}</option>)}</select></td><td><button className="iconBtn danger" onClick={()=>remove(o.id)}><Trash2 size={16}/></button></td></tr>)}
-        {!filtered.length&&<tr><td colSpan={7}><Empty icon={ClipboardList} title="Nenhum pedido aqui" text="Cadastre o primeiro pedido da confeitaria."/></td></tr>}
+      <div className="tableWrap"><table><thead><tr><th>Cliente</th><th>Pedido</th><th>Entrega</th><th>Origem</th><th>Total</th><th>Pagamento</th><th>Status</th><th></th></tr></thead><tbody>
+        {filtered.map(o=><tr key={o.id}><td><strong>{o.customer}</strong><small>{o.phone||'sem telefone'}</small></td><td>{o.quantity}× {data.products.find(p=>p.id===o.productId)?.name||'Produto'}<small>{o.paymentMethod}</small></td><td>{new Date(`${o.deliveryDate}T12:00`).toLocaleDateString('pt-BR')}<small>{o.address||'Retirada / combinar'}</small></td><td>{o.source}</td><td><strong>{brl(orderTotal(o))}</strong><small>frete {brl(o.deliveryFee)}</small></td><td><button className={`paymentToggle ${o.paid?'paid':''}`} onClick={()=>togglePaid(o.id)}>{o.paid?'✓ Pago':'Pendente'}</button></td><td><select className="statusSelect" value={o.status} onChange={e=>updateStatus(o.id,e.target.value as OrderStatus)}>{['Novo','Confirmado','Produção','Pronto','Saiu para entrega','Entregue','Cancelado'].map(st=><option key={st}>{st}</option>)}</select></td><td><button className="iconBtn danger" onClick={()=>remove(o.id)}><Trash2 size={16}/></button></td></tr>)}
+        {!filtered.length&&<tr><td colSpan={8}><Empty icon={ClipboardList} title="Nenhum pedido aqui" text="Cadastre o primeiro pedido da confeitaria."/></td></tr>}
       </tbody></table></div>
     </div>
     {form&&<Modal title="Novo pedido" onClose={()=>setForm(false)} footer={<><button className="secondary" onClick={()=>setForm(false)}>Cancelar</button><button className="primary" onClick={save}><Save size={17}/> Salvar pedido</button></>}>
       <div className="formGrid">
         <Field label="Cliente"><input value={draft.customer||''} onChange={e=>setDraft({...draft,customer:e.target.value})}/></Field>
         <Field label="WhatsApp"><input placeholder="(19) 99999-9999" value={draft.phone||''} onChange={e=>setDraft({...draft,phone:e.target.value})}/></Field>
-        <Field label="Produto"><select value={draft.productId} onChange={e=>{const p=data.products.find(p=>p.id===e.target.value);setDraft({...draft,productId:e.target.value,unitPrice:p?.salePrice||0})}}>{data.products.filter(p=>p.active).map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
+        <Field label="Produto"><select value={draft.productId} onChange={e=>{const pr=data.products.find(p=>p.id===e.target.value);setDraft({...draft,productId:e.target.value,unitPrice:pr?.salePrice||0})}}>{data.products.filter(p=>p.active).map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
         <Field label="Quantidade"><input type="number" min="1" value={draft.quantity||1} onChange={e=>setDraft({...draft,quantity:Number(e.target.value)})}/></Field>
         <Field label="Preço unitário"><MoneyInput value={Number(draft.unitPrice)||0} onChange={v=>setDraft({...draft,unitPrice:v})}/></Field>
         <Field label="Taxa de entrega"><MoneyInput value={Number(draft.deliveryFee)||0} onChange={v=>setDraft({...draft,deliveryFee:v})}/></Field>
@@ -203,6 +205,7 @@ function Orders({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSta
         <Field label="Pagamento"><select value={draft.paymentMethod} onChange={e=>setDraft({...draft,paymentMethod:e.target.value as PaymentMethod})}>{['Pix','Dinheiro','Cartão','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field>
         <Field label="Origem"><select value={draft.source} onChange={e=>setDraft({...draft,source:e.target.value as OrderSource})}>{['Instagram','Facebook Ads','WhatsApp','Indicação','Cliente antigo','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field>
         <Field label="Status"><select value={draft.status} onChange={e=>setDraft({...draft,status:e.target.value as OrderStatus})}>{['Novo','Confirmado','Produção','Pronto','Saiu para entrega','Entregue'].map(x=><option key={x}>{x}</option>)}</select></Field>
+        <Field label="Pagamento recebido"><label className="check"><input type="checkbox" checked={!!draft.paid} onChange={e=>setDraft({...draft,paid:e.target.checked})}/> Marcar como pago</label></Field>
         <Field label="Endereço" wide><input value={draft.address||''} onChange={e=>setDraft({...draft,address:e.target.value})}/></Field>
         <Field label="Observações" wide><textarea value={draft.notes||''} onChange={e=>setDraft({...draft,notes:e.target.value})}/></Field>
       </div>
@@ -279,16 +282,17 @@ function Catalog({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSt
 function Purchases({data,setData}:{data:AppData;setData:React.Dispatch<React.SetStateAction<AppData>>}) {
   const [mode,setMode]=useState<'list'|'nfce'>('list'); const [manual,setManual]=useState(false);
   const [qrUrl,setQrUrl]=useState(''); const [loading,setLoading]=useState(false); const [error,setError]=useState(''); const [preview,setPreview]=useState<any>(null);
-  const [purchase,setPurchase]=useState<Partial<Purchase>>({date:today(),store:'',source:'Manual',items:[],total:0});
+  const [nfcePaymentMethod,setNfcePaymentMethod]=useState<PaymentMethod>('Pix');
+  const [purchase,setPurchase]=useState<Partial<Purchase>>({date:today(),store:'',source:'Manual',items:[],total:0,paymentMethod:'Pix'});
   const importNfce=async(url=qrUrl)=>{setLoading(true);setError('');setPreview(null);try{const r=await fetch('/api/nfce/import',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Falha ao importar nota');setPreview(j);setQrUrl(url)}catch(e:any){setError(e.message)}finally{setLoading(false)}};
-  const confirmNfce=()=>{if(!preview)return;const items:PurchaseItem[]=(preview.items||[]).map((x:any)=>({id:uid(),name:x.name||'Item',quantity:Number(x.quantity)||1,unit:(x.unit||'un') as Unit,total:Number(x.total)||0}));const total=Number(preview.total)||items.reduce((s,i)=>s+i.total,0);const p:Purchase={id:uid(),date:preview.date||today(),store:preview.store||'Mercado',source:'NFC-e',accessKey:preview.accessKey,qrUrl,items,total};setData(d=>({...d,purchases:[p,...d.purchases]}));setPreview(null);setMode('list')};
+  const confirmNfce=()=>{if(!preview)return;const items:PurchaseItem[]=(preview.items||[]).map((x:any)=>({id:uid(),name:x.name||'Item',quantity:Number(x.quantity)||1,unit:(x.unit||'un') as Unit,total:Number(x.total)||0}));const total=Number(preview.total)||items.reduce((sum,i)=>sum+i.total,0);const p:Purchase={id:uid(),date:preview.date||today(),store:preview.store||'Mercado',source:'NFC-e',paymentMethod:nfcePaymentMethod,accessKey:preview.accessKey,qrUrl,items,total};setData(d=>({...d,purchases:[p,...d.purchases]}));setPreview(null);setMode('list')};
   const addManualItem=()=>setPurchase({...purchase,items:[...(purchase.items||[]),{id:uid(),name:'',quantity:1,unit:'un',total:0}]});
-  const saveManual=()=>{const items=purchase.items||[];const p:Purchase={id:uid(),date:purchase.date||today(),store:purchase.store||'Mercado',source:'Manual',items,total:items.reduce((s,i)=>s+Number(i.total),0)};setData(d=>({...d,purchases:[p,...d.purchases]}));setManual(false)};
+  const saveManual=()=>{const items=purchase.items||[];const p:Purchase={id:uid(),date:purchase.date||today(),store:purchase.store||'Mercado',source:'Manual',paymentMethod:purchase.paymentMethod||'Outro',items,total:items.reduce((sum,i)=>sum+Number(i.total),0)};setData(d=>({...d,purchases:[p,...d.purchases]}));setManual(false);setPurchase({date:today(),store:'',source:'Manual',items:[],total:0,paymentMethod:'Pix'})};
   return <section className="content">
     <div className="toolbar"><div className="segmented"><button className={mode==='list'?'active':''} onClick={()=>setMode('list')}>Histórico</button><button className={mode==='nfce'?'active':''} onClick={()=>setMode('nfce')}>Importar NFC-e</button></div>{mode==='list'&&<button className="primary" onClick={()=>setManual(true)}><Plus size={18}/> Compra manual</button>}</div>
     {mode==='list'?<>
-      <div className="metricsGrid three"><Metric icon={ReceiptText} label="Notas importadas" value={`${data.purchases.filter(p=>p.source==='NFC-e').length}`} note="via QR Code NFC-e"/><Metric icon={ShoppingBasket} label="Compras registradas" value={`${data.purchases.length}`} note="manual + NFC-e"/><Metric icon={BadgeDollarSign} label="Total em compras" value={brl(data.purchases.reduce((s,p)=>s+p.total,0))} note="histórico completo"/></div>
-      <div className="card tableCard"><div className="tableWrap"><table><thead><tr><th>Data</th><th>Mercado</th><th>Origem</th><th>Itens</th><th>Total</th></tr></thead><tbody>{data.purchases.map(p=><tr key={p.id}><td>{new Date(`${p.date}T12:00`).toLocaleDateString('pt-BR')}</td><td><strong>{p.store}</strong>{p.accessKey&&<small>chave …{p.accessKey.slice(-8)}</small>}</td><td><span className="softTag">{p.source}</span></td><td>{p.items.length}</td><td><strong>{brl(p.total)}</strong></td></tr>)}{!data.purchases.length&&<tr><td colSpan={5}><Empty icon={ReceiptText} title="Nenhuma compra registrada" text="Escaneie o QR Code da NFC-e ou cadastre manualmente."/></td></tr>}</tbody></table></div></div>
+      <div className="metricsGrid three"><Metric icon={ReceiptText} label="Notas importadas" value={`${data.purchases.filter(p=>p.source==='NFC-e').length}`} note="via QR Code NFC-e"/><Metric icon={ShoppingBasket} label="Compras registradas" value={`${data.purchases.length}`} note="manual + NFC-e"/><Metric icon={BadgeDollarSign} label="Total em compras" value={brl(data.purchases.reduce((sum,p)=>sum+p.total,0))} note="histórico completo"/></div>
+      <div className="card tableCard"><div className="tableWrap"><table><thead><tr><th>Data</th><th>Mercado</th><th>Origem</th><th>Pagamento</th><th>Itens</th><th>Total</th></tr></thead><tbody>{data.purchases.map(p=><tr key={p.id}><td>{new Date(`${p.date}T12:00`).toLocaleDateString('pt-BR')}</td><td><strong>{p.store}</strong>{p.accessKey&&<small>chave …{p.accessKey.slice(-8)}</small>}</td><td><span className="softTag">{p.source}</span></td><td>{p.paymentMethod||'Outro'}</td><td>{p.items.length}</td><td><strong>{brl(p.total)}</strong></td></tr>)}{!data.purchases.length&&<tr><td colSpan={6}><Empty icon={ReceiptText} title="Nenhuma compra registrada" text="Escaneie o QR Code da NFC-e ou cadastre manualmente."/></td></tr>}</tbody></table></div></div>
     </>:<div className="twoCols nfceGrid">
       <div className="card">
         <div className="sectionTitle"><div><p className="eyebrow">LEITOR NFC-e</p><h3>Escaneie o QR Code da nota</h3></div><div className="metricIcon"><QrCode size={20}/></div></div>
@@ -301,219 +305,162 @@ function Purchases({data,setData}:{data:AppData;setData:React.Dispatch<React.Set
       </div>
       <div className="card">
         <div className="sectionTitle"><div><p className="eyebrow">PRÉVIA</p><h3>Itens encontrados</h3></div></div>
-        {preview?<><div className="receiptHead"><div><strong>{preview.store||'Estabelecimento'}</strong><span>{preview.date?new Date(`${preview.date}T12:00`).toLocaleDateString('pt-BR'):'Data não identificada'}</span></div><span className="softTag">{preview.parser||'NFC-e'}</span></div><div className="receiptItems">{(preview.items||[]).map((i:any,idx:number)=><div key={idx}><span>{i.name}<small>{i.quantity||1} {i.unit||'un'}</small></span><strong>{brl(Number(i.total)||0)}</strong></div>)}</div><div className="receiptTotal"><span>Total</span><strong>{brl(Number(preview.total)||0)}</strong></div><button className="primary full" onClick={confirmNfce}><CheckCircle2 size={18}/> Importar compra</button></>:<Empty icon={ReceiptText} title="A nota aparece aqui" text="Escaneie ou cole o QR Code para importar os itens."/>}
+        {preview?<><div className="receiptHead"><div><strong>{preview.store||'Estabelecimento'}</strong><span>{preview.date?new Date(`${preview.date}T12:00`).toLocaleDateString('pt-BR'):'Data não identificada'}</span></div><span className="softTag">{preview.parser||'NFC-e'}</span></div><div className="receiptItems">{(preview.items||[]).map((i:any,idx:number)=><div key={idx}><span>{i.name}<small>{i.quantity||1} {i.unit||'un'}</small></span><strong>{brl(Number(i.total)||0)}</strong></div>)}</div><div className="receiptTotal"><span>Total</span><strong>{brl(Number(preview.total)||0)}</strong></div><Field label="Pago com"><select value={nfcePaymentMethod} onChange={e=>setNfcePaymentMethod(e.target.value as PaymentMethod)}>{['Pix','Dinheiro','Cartão','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field><button className="primary full" onClick={confirmNfce}><CheckCircle2 size={18}/> Importar compra e descontar do saldo</button></>:<Empty icon={ReceiptText} title="A nota aparece aqui" text="Escaneie ou cole o QR Code para importar os itens."/>}
       </div>
     </div>}
-    {manual&&<Modal title="Registrar compra" onClose={()=>setManual(false)} footer={<button className="primary" onClick={saveManual}><Save size={17}/> Salvar compra</button>}><div className="formGrid"><Field label="Mercado"><input value={purchase.store||''} onChange={e=>setPurchase({...purchase,store:e.target.value})}/></Field><Field label="Data"><input type="date" value={purchase.date} onChange={e=>setPurchase({...purchase,date:e.target.value})}/></Field></div><div className="recipeBuilder"><div className="sectionTitle"><div><p className="eyebrow">ITENS</p><h3>O que foi comprado</h3></div><button className="ghost" onClick={addManualItem}><Plus size={16}/> item</button></div>{(purchase.items||[]).map((i,idx)=><div className="purchaseLine" key={i.id}><input placeholder="Produto" value={i.name} onChange={e=>{const a=[...(purchase.items||[])];a[idx]={...i,name:e.target.value};setPurchase({...purchase,items:a})}}/><input type="number" value={i.quantity} onChange={e=>{const a=[...(purchase.items||[])];a[idx]={...i,quantity:Number(e.target.value)};setPurchase({...purchase,items:a})}}/><select value={i.unit} onChange={e=>{const a=[...(purchase.items||[])];a[idx]={...i,unit:e.target.value as Unit};setPurchase({...purchase,items:a})}}>{['un','g','kg','ml','l','pct'].map(u=><option key={u}>{u}</option>)}</select><MoneyInput value={i.total} onChange={v=>{const a=[...(purchase.items||[])];a[idx]={...i,total:v};setPurchase({...purchase,items:a})}}/><button className="iconBtn danger" onClick={()=>setPurchase({...purchase,items:(purchase.items||[]).filter((_,x)=>x!==idx)})}><Trash2 size={16}/></button></div>)}</div></Modal>}
+    {manual&&<Modal title="Registrar compra" onClose={()=>setManual(false)} footer={<button className="primary" onClick={saveManual}><Save size={17}/> Salvar compra</button>}><div className="formGrid"><Field label="Mercado"><input value={purchase.store||''} onChange={e=>setPurchase({...purchase,store:e.target.value})}/></Field><Field label="Data"><input type="date" value={purchase.date} onChange={e=>setPurchase({...purchase,date:e.target.value})}/></Field><Field label="Pagamento"><select value={purchase.paymentMethod||'Outro'} onChange={e=>setPurchase({...purchase,paymentMethod:e.target.value as PaymentMethod})}>{['Pix','Dinheiro','Cartão','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field></div><div className="recipeBuilder"><div className="sectionTitle"><div><p className="eyebrow">ITENS</p><h3>O que foi comprado</h3></div><button className="ghost" onClick={addManualItem}><Plus size={16}/> item</button></div>{(purchase.items||[]).map((i,idx)=><div className="purchaseLine" key={i.id}><input placeholder="Produto" value={i.name} onChange={e=>{const a=[...(purchase.items||[])];a[idx]={...i,name:e.target.value};setPurchase({...purchase,items:a})}}/><input type="number" value={i.quantity} onChange={e=>{const a=[...(purchase.items||[])];a[idx]={...i,quantity:Number(e.target.value)};setPurchase({...purchase,items:a})}}/><select value={i.unit} onChange={e=>{const a=[...(purchase.items||[])];a[idx]={...i,unit:e.target.value as Unit};setPurchase({...purchase,items:a})}}>{['un','g','kg','ml','l','pct'].map(u=><option key={u}>{u}</option>)}</select><MoneyInput value={i.total} onChange={v=>{const a=[...(purchase.items||[])];a[idx]={...i,total:v};setPurchase({...purchase,items:a})}}/><button className="iconBtn danger" onClick={()=>setPurchase({...purchase,items:(purchase.items||[]).filter((_,x)=>x!==idx)})}><Trash2 size={16}/></button></div>)}</div></Modal>}
   </section>
 }
 
 function Finance({data,setData}:{data:AppData;setData:React.Dispatch<React.SetStateAction<AppData>>}) {
   const m = monthlyMetrics(data);
-  const emptyExpense: Partial<Expense> = {
-    date: today(),
-    category: 'Outro',
-    description: '',
-    amount: 0,
-    recurring: false
-  };
+  const ledger = financeTransactions(data);
+  const balance = financeBalance(data);
+  const monthCash = financeMonthSummary(data);
 
-  const [modal,setModal] = useState(false);
-  const [editingId,setEditingId] = useState<string | null>(null);
+  const emptyExpense: Partial<Expense> = {date:today(),category:'Outro',description:'',amount:0,recurring:false,paymentMethod:'Pix',payee:''};
+  const [expenseModal,setExpenseModal] = useState(false);
+  const [editingExpenseId,setEditingExpenseId] = useState<string | null>(null);
   const [exp,setExp] = useState<Partial<Expense>>(emptyExpense);
 
-  const openNew = () => {
-    setEditingId(null);
-    setExp({...emptyExpense, date: today()});
-    setModal(true);
+  const [movementModal,setMovementModal] = useState(false);
+  const [movementType,setMovementType] = useState<'Entrada'|'Saída'>('Entrada');
+  const [movement,setMovement] = useState({date:today(),description:'',person:'',amount:0,paymentMethod:'Pix' as PaymentMethod});
+
+  const [initialBalance,setInitialBalance] = useState(0);
+  const [reconcileModal,setReconcileModal] = useState(false);
+  const [realBalance,setRealBalance] = useState(balance);
+  const [reconcileNote,setReconcileNote] = useState('Conciliação de saldo');
+
+  const [profitMonth,setProfitMonth] = useState(monthKey());
+  const profitMetrics = monthlyMetrics(data, profitMonth);
+  const distributableProfit = Math.max(0, profitMetrics.profit);
+  const shareTotal = data.finance.profitShares.reduce((sum,s)=>sum+Number(s.percentage||0),0);
+  const monthOptions = useMemo(()=>{
+    const keys = new Set<string>([monthKey()]);
+    data.orders.forEach(o=>keys.add(o.createdAt.slice(0,7)));
+    data.expenses.forEach(e=>keys.add(e.date.slice(0,7)));
+    data.purchases.forEach(p=>keys.add(p.date.slice(0,7)));
+    data.finance.manualTransactions.forEach(t=>keys.add(t.date.slice(0,7)));
+    return [...keys].filter(k=>/^\d{4}-\d{2}$/.test(k)).sort().reverse();
+  },[data.orders,data.expenses,data.purchases,data.finance.manualTransactions]);
+
+  const monthLabel=(key:string)=>new Date(`${key}-01T12:00:00`).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+
+  const defineInitialBalance=()=>{
+    setData(d=>({...d,finance:{
+      ...d.finance,
+      initialBalance:Number(initialBalance)||0,
+      initialBalanceSet:true,
+      initialBalanceDate:today(),
+      baselineSourceIds:autoFinanceSourceIds(d),
+    }}));
   };
 
-  const openEdit = (expense: Expense) => {
-    setEditingId(expense.id);
-    setExp({...expense});
-    setModal(true);
+  const openMovement=(type:'Entrada'|'Saída')=>{
+    setMovementType(type);
+    setMovement({date:today(),description:type==='Entrada'?'Recebimento':'Pagamento',person:'',amount:0,paymentMethod:'Pix'});
+    setMovementModal(true);
   };
 
-  const closeModal = () => {
-    setModal(false);
-    setEditingId(null);
-    setExp({...emptyExpense, date: today()});
-  };
-
-  const save = () => {
-    if(!exp.description?.trim()) return;
-
-    const expense: Expense = {
-      id: editingId || uid(),
-      date: exp.date || today(),
-      category: (exp.category as Expense['category']) || 'Outro',
-      description: exp.description.trim(),
-      amount: Number(exp.amount) || 0,
-      recurring: !!exp.recurring
+  const saveMovement=()=>{
+    if(!movement.description.trim() || Number(movement.amount)<=0) return;
+    const tx:FinanceTransaction={
+      id:uid(),date:movement.date||today(),createdAt:new Date().toISOString(),type:movementType,
+      description:movement.description.trim(),person:movement.person.trim(),amount:Math.abs(Number(movement.amount)||0),
+      paymentMethod:movement.paymentMethod,source:'Manual'
     };
-
-    setData(d => ({
-      ...d,
-      expenses: editingId
-        ? d.expenses.map(e => e.id === editingId ? expense : e)
-        : [expense, ...d.expenses]
-    }));
-
-    closeModal();
+    setData(d=>({...d,finance:{...d.finance,manualTransactions:[tx,...d.finance.manualTransactions]}}));
+    setMovementModal(false);
   };
 
-  const remove = (id:string) => {
-    if(!confirm('Excluir esta despesa? Essa ação não pode ser desfeita.')) return;
-    setData(d => ({
-      ...d,
-      expenses: d.expenses.filter(e => e.id !== id)
-    }));
+  const saveReconciliation=()=>{
+    const difference=Number(realBalance)-balance;
+    if(Math.abs(difference)<0.005){setReconcileModal(false);return;}
+    const tx:FinanceTransaction={
+      id:uid(),date:today(),createdAt:new Date().toISOString(),type:'Ajuste',description:reconcileNote.trim()||'Conciliação de saldo',
+      person:'Ajuste interno',amount:difference,paymentMethod:'Outro',source:'Ajuste'
+    };
+    setData(d=>({...d,finance:{...d.finance,manualTransactions:[tx,...d.finance.manualTransactions]}}));
+    setReconcileModal(false);
+  };
+
+  const removeManualTransaction=(id:string)=>{
+    if(!confirm('Excluir esta movimentação manual?')) return;
+    setData(d=>({...d,finance:{...d.finance,manualTransactions:d.finance.manualTransactions.filter(t=>t.id!==id)}}));
+  };
+
+  const openNewExpense=()=>{setEditingExpenseId(null);setExp({...emptyExpense,date:today()});setExpenseModal(true)};
+  const openEditExpense=(expense:Expense)=>{setEditingExpenseId(expense.id);setExp({...expense});setExpenseModal(true)};
+  const closeExpenseModal=()=>{setExpenseModal(false);setEditingExpenseId(null);setExp({...emptyExpense,date:today()})};
+  const saveExpense=()=>{
+    if(!exp.description?.trim()) return;
+    const expense:Expense={
+      id:editingExpenseId||uid(),date:exp.date||today(),category:(exp.category as Expense['category'])||'Outro',
+      description:exp.description.trim(),amount:Number(exp.amount)||0,recurring:!!exp.recurring,
+      paymentMethod:exp.paymentMethod||'Outro',payee:exp.payee?.trim()||undefined
+    };
+    setData(d=>({...d,expenses:editingExpenseId?d.expenses.map(e=>e.id===editingExpenseId?expense:e):[expense,...d.expenses]}));
+    closeExpenseModal();
+  };
+  const removeExpense=(id:string)=>confirm('Excluir esta despesa? Essa saída também será removida do saldo.')&&setData(d=>({...d,expenses:d.expenses.filter(e=>e.id!==id)}));
+
+  const updateShare=(id:string,field:'name'|'percentage',value:string|number)=>{
+    setData(d=>({...d,finance:{...d.finance,profitShares:d.finance.profitShares.map(s=>{
+      if(s.id!==id) return s;
+      return field==='percentage' ? {...s,percentage:Number(value)} : {...s,name:String(value)};
+    })}}));
   };
 
   return <section className="content">
-    <div className="toolbar">
-      <div>
-        <p className="mutedText noMargin">Resultado calculado a partir dos pedidos, custos e despesas.</p>
+    {!data.finance.initialBalanceSet ? <div className="balanceSetup card">
+      <div className="balanceSetupIcon"><Landmark size={26}/></div>
+      <div className="grow"><p className="eyebrow">PRIMEIRA CONFIGURAÇÃO</p><h2>Quanto a empresa tem agora?</h2><p className="mutedText">Informe o saldo atual uma única vez. O que já está cadastrado no sistema será considerado parte desse saldo e não será descontado de novo.</p></div>
+      <div className="balanceSetupAction"><MoneyInput value={initialBalance} onChange={setInitialBalance}/><button className="primary" onClick={defineInitialBalance}><LockKeyhole size={17}/> Definir saldo inicial</button></div>
+    </div> : <>
+      <div className="bankHero">
+        <div><p className="eyebrow light">CAIXA DA CONFEITARIA</p><span>Saldo da empresa</span><strong>{brl(balance)}</strong><small><LockKeyhole size={12}/> saldo inicial definido em {data.finance.initialBalanceDate?new Date(`${data.finance.initialBalanceDate}T12:00`).toLocaleDateString('pt-BR'):'—'} • {brl(data.finance.initialBalance)}</small></div>
+        <div className="bankActions"><button onClick={()=>openMovement('Entrada')}><ArrowDownLeft size={18}/> Receber Pix</button><button onClick={()=>openMovement('Saída')}><ArrowUpRight size={18}/> Registrar pagamento</button><button onClick={()=>{setRealBalance(balance);setReconcileModal(true)}}><Scale size={18}/> Conciliar</button></div>
       </div>
-      <button className="primary" onClick={openNew}>
-        <Plus size={18}/> Nova despesa
-      </button>
-    </div>
 
-    <div className="metricsGrid">
-      <Metric icon={CircleDollarSign} label="Faturamento" value={brl(m.revenue)} note="produto + entrega"/>
-      <Metric icon={PackageOpen} label="CMV estimado" value={brl(m.cogs)} note="custo dos produtos vendidos"/>
-      <Metric icon={WalletCards} label="Despesas do mês" value={brl(m.expenses+m.fixed)} note={`inclui ${brl(m.fixed)} fixos`}/>
-      <Metric icon={TrendingUp} label="Lucro estimado" value={brl(m.profit)} note={m.revenue?`${((m.profit/m.revenue)*100).toFixed(1)}% de margem líquida`:'sem vendas'} positive={m.profit>=0}/>
+      <div className="metricsGrid">
+        <Metric icon={ArrowDownLeft} label="Entradas do mês" value={brl(monthCash.entries)} note="recebimentos registrados" positive/>
+        <Metric icon={ArrowUpRight} label="Saídas do mês" value={brl(monthCash.exits)} note="compras + despesas + pagamentos"/>
+        <Metric icon={WalletCards} label="Movimentação líquida" value={brl(monthCash.net)} note={`${monthCash.count} movimentos no mês`} positive={monthCash.net>=0}/>
+        <Metric icon={TrendingUp} label="Lucro estimado" value={brl(m.profit)} note="resultado contábil do mês" positive={m.profit>=0}/>
+      </div>
+
+      <div className="card tableCard financeLedger">
+        <div className="sectionTitle padded"><div><p className="eyebrow">CONTA DA EMPRESA</p><h3>Extrato</h3></div><span className="softTag">automático + manual</span></div>
+        <div className="tableWrap"><table><thead><tr><th>Data</th><th>Movimento</th><th>Descrição</th><th>Para / de quem</th><th>Forma</th><th>Origem</th><th>Valor</th><th></th></tr></thead><tbody>
+          {ledger.map(t=><tr key={t.id}><td>{new Date(`${t.date}T12:00`).toLocaleDateString('pt-BR')}</td><td><span className={`movementTag ${t.type==='Entrada'?'in':t.type==='Saída'?'out':'adjust'}`}>{t.type}</span></td><td><strong>{t.description}</strong></td><td>{t.person||'—'}</td><td>{t.paymentMethod}</td><td><span className="softTag">{t.source}</span></td><td><strong className={t.type==='Entrada'||(t.type==='Ajuste'&&t.amount>0)?'moneyIn':t.type==='Saída'||t.amount<0?'moneyOut':''}>{t.type==='Entrada'?'+':t.type==='Saída'?'-':t.amount>=0?'+':''}{brl(Math.abs(t.amount))}</strong></td><td>{(t.source==='Manual'||t.source==='Ajuste')&&<button className="iconBtn danger" onClick={()=>removeManualTransaction(t.id)}><Trash2 size={15}/></button>}</td></tr>)}
+          {!ledger.length&&<tr><td colSpan={8}><Empty icon={WalletCards} title="Sem movimentações ainda" text="Recebimentos, compras e despesas novas aparecerão aqui automaticamente."/></td></tr>}
+        </tbody></table></div>
+      </div>
+    </>}
+
+    <div className="profitCard card">
+      <div className="sectionTitle"><div><p className="eyebrow">FECHAMENTO MENSAL</p><h3>Divisão de lucros</h3></div><select className="monthSelect" value={profitMonth} onChange={e=>setProfitMonth(e.target.value)}>{monthOptions.map(k=><option key={k} value={k}>{monthLabel(k)}</option>)}</select></div>
+      <div className="profitSummary"><div><span>Faturamento</span><strong>{brl(profitMetrics.revenue)}</strong></div><div><span>Custos + despesas</span><strong>{brl(profitMetrics.cogs+profitMetrics.expenses+profitMetrics.fixed)}</strong></div><div className="profitResult"><span>Lucro para dividir</span><strong>{brl(distributableProfit)}</strong></div></div>
+      <div className="profitShares">
+        {data.finance.profitShares.map(share=><div className="profitShare" key={share.id}><input className="shareName" value={share.name} onChange={e=>updateShare(share.id,'name',e.target.value)}/><div className="sharePercent"><input type="number" min="0" max="100" step="1" value={share.percentage} onChange={e=>updateShare(share.id,'percentage',e.target.value)}/><span>%</span></div><strong>{brl(distributableProfit*(Number(share.percentage)||0)/100)}</strong></div>)}
+      </div>
+      <div className={`shareCheck ${Math.abs(shareTotal-100)<0.01?'ok':'bad'}`}><span>Total da divisão</span><strong>{shareTotal.toFixed(0)}%</strong><small>{Math.abs(shareTotal-100)<0.01?'✓ Fechou 100%':'Ajuste as porcentagens até fechar 100%'}</small></div>
+      <p className="mutedText noMargin">A divisão é calculada no fim de cada mês e não mexe no saldo automaticamente. Quando vocês realmente retirarem o dinheiro, use “Registrar pagamento”.</p>
     </div>
 
     <div className="twoCols">
-      <div className="card">
-        <div className="sectionTitle">
-          <div><p className="eyebrow">MARKETING</p><h3>Retorno dos anúncios</h3></div>
-          <Megaphone size={20}/>
-        </div>
-        <div className="adMetrics">
-          <div><span>Gasto Meta Ads</span><strong>{brl(m.ads)}</strong></div>
-          <div><span>Pedidos atribuídos</span><strong>{m.adOrders}</strong></div>
-          <div><span>CPA</span><strong>{m.adOrders?brl(m.cpa):'—'}</strong></div>
-          <div><span>ROAS</span><strong>{m.ads?`${m.roas.toFixed(2)}x`:'—'}</strong></div>
-        </div>
-        <small className="helper">Para atribuir, selecione “Facebook Ads” na origem do pedido.</small>
-      </div>
-
-      <div className="card">
-        <div className="sectionTitle">
-          <div><p className="eyebrow">RESULTADO</p><h3>De onde sai o lucro</h3></div>
-        </div>
-        <div className="waterfall">
-          <div><span>Faturamento</span><b>{brl(m.revenue)}</b></div>
-          <div><span>− custo dos produtos</span><b>{brl(m.cogs)}</b></div>
-          <div><span>− despesas variáveis</span><b>{brl(m.expenses)}</b></div>
-          <div><span>− MEI + fixos</span><b>{brl(m.fixed)}</b></div>
-          <div className="total"><span>= lucro estimado</span><b>{brl(m.profit)}</b></div>
-        </div>
-      </div>
+      <div className="card"><div className="sectionTitle"><div><p className="eyebrow">MARKETING</p><h3>Retorno dos anúncios</h3></div><Megaphone size={20}/></div><div className="adMetrics"><div><span>Gasto Meta Ads</span><strong>{brl(m.ads)}</strong></div><div><span>Pedidos atribuídos</span><strong>{m.adOrders}</strong></div><div><span>CPA</span><strong>{m.adOrders?brl(m.cpa):'—'}</strong></div><div><span>ROAS</span><strong>{m.ads?`${m.roas.toFixed(2)}x`:'—'}</strong></div></div><small className="helper">Para atribuir, selecione “Facebook Ads” na origem do pedido.</small></div>
+      <div className="card"><div className="sectionTitle"><div><p className="eyebrow">RESULTADO</p><h3>De onde sai o lucro</h3></div></div><div className="waterfall"><div><span>Faturamento</span><b>{brl(m.revenue)}</b></div><div><span>− custo dos produtos</span><b>{brl(m.cogs)}</b></div><div><span>− despesas variáveis</span><b>{brl(m.expenses)}</b></div><div><span>− MEI + fixos</span><b>{brl(m.fixed)}</b></div><div className="total"><span>= lucro estimado</span><b>{brl(m.profit)}</b></div></div></div>
     </div>
 
-    <div className="card tableCard">
-      <div className="sectionTitle padded">
-        <div><p className="eyebrow">SAÍDAS</p><h3>Despesas</h3></div>
-      </div>
+    <div className="card tableCard"><div className="sectionTitle padded"><div><p className="eyebrow">SAÍDAS</p><h3>Despesas</h3></div><button className="primary" onClick={openNewExpense}><Plus size={17}/> Nova despesa</button></div><div className="tableWrap"><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Pago para</th><th>Forma</th><th>Recorrente</th><th>Valor</th><th>Ações</th></tr></thead><tbody>{data.expenses.map(e=><tr key={e.id}><td>{new Date(`${e.date}T12:00`).toLocaleDateString('pt-BR')}</td><td><span className="softTag">{e.category}</span></td><td>{e.description}</td><td>{e.payee||'—'}</td><td>{e.paymentMethod||'Outro'}</td><td>{e.recurring?'Sim':'Não'}</td><td><strong>{brl(e.amount)}</strong></td><td><div className="rowActions"><button className="iconBtn" title="Editar despesa" onClick={()=>openEditExpense(e)}><Pencil size={16}/></button><button className="iconBtn danger" title="Excluir despesa" onClick={()=>removeExpense(e.id)}><Trash2 size={16}/></button></div></td></tr>)}{!data.expenses.length&&<tr><td colSpan={8}><Empty icon={WalletCards} title="Nenhuma despesa registrada" text="Cadastre os gastos da confeitaria por aqui."/></td></tr>}</tbody></table></div></div>
 
-      <div className="tableWrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Categoria</th>
-              <th>Descrição</th>
-              <th>Recorrente</th>
-              <th>Valor</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
+    {movementModal&&<Modal title={movementType==='Entrada'?'Receber / registrar entrada':'Registrar pagamento'} onClose={()=>setMovementModal(false)} footer={<><button className="secondary" onClick={()=>setMovementModal(false)}>Cancelar</button><button className="primary" onClick={saveMovement}><Save size={17}/> Registrar</button></>}><p className="mutedText">{movementType==='Entrada'?'Pedidos entram automaticamente quando você marca “Pago”. Use esta opção para entradas avulsas, para não duplicar recebimentos.':'Compras e despesas cadastradas já saem do saldo automaticamente. Use esta opção para pagamentos/retiradas que não estejam registrados em outro lugar.'}</p><div className="formGrid"><Field label="Data"><input type="date" value={movement.date} onChange={e=>setMovement({...movement,date:e.target.value})}/></Field><Field label={movementType==='Entrada'?'Recebido de':'Pago para'}><input placeholder={movementType==='Entrada'?'Nome do cliente / pessoa':'Mercado / pessoa / empresa'} value={movement.person} onChange={e=>setMovement({...movement,person:e.target.value})}/></Field><Field label="Descrição" wide><input value={movement.description} onChange={e=>setMovement({...movement,description:e.target.value})}/></Field><Field label="Valor"><MoneyInput value={movement.amount} onChange={v=>setMovement({...movement,amount:v})}/></Field><Field label="Forma"><select value={movement.paymentMethod} onChange={e=>setMovement({...movement,paymentMethod:e.target.value as PaymentMethod})}>{['Pix','Dinheiro','Cartão','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field></div></Modal>}
 
-          <tbody>
-            {data.expenses.map(e => (
-              <tr key={e.id}>
-                <td>{new Date(`${e.date}T12:00`).toLocaleDateString('pt-BR')}</td>
-                <td><span className="softTag">{e.category}</span></td>
-                <td>{e.description}</td>
-                <td>{e.recurring?'Sim':'Não'}</td>
-                <td><strong>{brl(e.amount)}</strong></td>
-                <td>
-                  <div style={{display:'flex',gap:8}}>
-                    <button
-                      className="iconBtn"
-                      title="Editar despesa"
-                      onClick={()=>openEdit(e)}
-                    >
-                      <Pencil size={16}/>
-                    </button>
-                    <button
-                      className="iconBtn danger"
-                      title="Excluir despesa"
-                      onClick={()=>remove(e.id)}
-                    >
-                      <Trash2 size={16}/>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+    {reconcileModal&&<Modal title="Conciliar saldo" onClose={()=>setReconcileModal(false)} footer={<><button className="secondary" onClick={()=>setReconcileModal(false)}>Cancelar</button><button className="primary" onClick={saveReconciliation}><Scale size={17}/> Registrar ajuste</button></>}><p className="mutedText">O sistema calcula {brl(balance)}. Digite quanto realmente aparece na conta/caixa. A diferença vira um ajuste registrado no extrato, sem editar o saldo inicial.</p><div className="formGrid"><Field label="Saldo real"><MoneyInput value={realBalance} onChange={setRealBalance}/></Field><Field label="Diferença"><div className={`readOnlyMoney ${realBalance-balance>=0?'moneyIn':'moneyOut'}`}>{realBalance-balance>=0?'+':''}{brl(realBalance-balance)}</div></Field><Field label="Motivo" wide><input value={reconcileNote} onChange={e=>setReconcileNote(e.target.value)}/></Field></div></Modal>}
 
-            {!data.expenses.length && (
-              <tr>
-                <td colSpan={6}>
-                  <Empty icon={WalletCards} title="Nenhuma despesa registrada" text="Cadastre os gastos da confeitaria por aqui."/>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    {modal&&<Modal
-      title={editingId ? 'Editar despesa' : 'Nova despesa'}
-      onClose={closeModal}
-      footer={
-        <>
-          <button className="secondary" onClick={closeModal}>Cancelar</button>
-          <button className="primary" onClick={save}>
-            <Save size={17}/> {editingId ? 'Salvar alterações' : 'Salvar'}
-          </button>
-        </>
-      }
-    >
-      <div className="formGrid">
-        <Field label="Data">
-          <input type="date" value={exp.date||today()} onChange={e=>setExp({...exp,date:e.target.value})}/>
-        </Field>
-
-        <Field label="Categoria">
-          <select value={exp.category} onChange={e=>setExp({...exp,category:e.target.value as Expense['category']})}>
-            {['Anúncios','Entrega','Utensílios','Taxas','MEI/DAS','Sistema','Outro'].map(x=><option key={x}>{x}</option>)}
-          </select>
-        </Field>
-
-        <Field label="Descrição" wide>
-          <input value={exp.description||''} onChange={e=>setExp({...exp,description:e.target.value})}/>
-        </Field>
-
-        <Field label="Valor">
-          <MoneyInput value={Number(exp.amount)||0} onChange={v=>setExp({...exp,amount:v})}/>
-        </Field>
-
-        <Field label="Recorrente">
-          <label className="check">
-            <input type="checkbox" checked={!!exp.recurring} onChange={e=>setExp({...exp,recurring:e.target.checked})}/>
-            Repetir mensalmente
-          </label>
-        </Field>
-      </div>
-    </Modal>}
+    {expenseModal&&<Modal title={editingExpenseId?'Editar despesa':'Nova despesa'} onClose={closeExpenseModal} footer={<><button className="secondary" onClick={closeExpenseModal}>Cancelar</button><button className="primary" onClick={saveExpense}><Save size={17}/> {editingExpenseId?'Salvar alterações':'Salvar'}</button></>}><div className="formGrid"><Field label="Data"><input type="date" value={exp.date||today()} onChange={e=>setExp({...exp,date:e.target.value})}/></Field><Field label="Categoria"><select value={exp.category} onChange={e=>setExp({...exp,category:e.target.value as Expense['category']})}>{['Anúncios','Entrega','Utensílios','Taxas','MEI/DAS','Sistema','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Descrição" wide><input value={exp.description||''} onChange={e=>setExp({...exp,description:e.target.value})}/></Field><Field label="Pago para"><input placeholder="Ex.: Meta, mercado, motoboy..." value={exp.payee||''} onChange={e=>setExp({...exp,payee:e.target.value})}/></Field><Field label="Forma"><select value={exp.paymentMethod||'Outro'} onChange={e=>setExp({...exp,paymentMethod:e.target.value as PaymentMethod})}>{['Pix','Dinheiro','Cartão','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Valor"><MoneyInput value={Number(exp.amount)||0} onChange={v=>setExp({...exp,amount:v})}/></Field><Field label="Recorrente"><label className="check"><input type="checkbox" checked={!!exp.recurring} onChange={e=>setExp({...exp,recurring:e.target.checked})}/> Repetir mensalmente</label></Field></div></Modal>}
   </section>
 }
 
