@@ -2,13 +2,18 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Sweet Dreams Gestão',
-    short_name: 'Sweet Gestão',
-    description: 'Pedidos, produção, custos, NFC-e e financeiro da Sweet Dreams.',
+    name: 'CONFEITARIA SWEET',
+    short_name: 'Sweet',
+    description: 'Pedidos, produção, custos, NFC-e e financeiro da Confeitaria Sweet.',
     start_url: '/',
+    scope: '/',
     display: 'standalone',
-    background_color: '#f8f2e7',
-    theme_color: '#f8f2e7',
-    icons: [{ src: '/logo.png', sizes: 'any', type: 'image/png' }],
+    orientation: 'portrait-primary',
+    background_color: '#fff8ed',
+    theme_color: '#0a67df',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    ],
   };
 }

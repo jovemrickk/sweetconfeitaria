@@ -6,14 +6,14 @@ import {
   BarChart3, ClipboardList, Factory, PackageOpen, ReceiptText, WalletCards, Settings,
   Plus, Search, CheckCircle2, Clock3, Truck, Trash2, Pencil, Camera, Upload, Download,
   ShoppingBasket, BadgeDollarSign, Boxes, TrendingUp, Users, Megaphone, X, Save, QrCode,
-  ChevronRight, AlertTriangle, CircleDollarSign, RotateCcw, Menu, Cloud, LogOut
+  ChevronRight, AlertTriangle, CircleDollarSign, RotateCcw, Menu, Cloud, CloudOff, LogOut
 } from 'lucide-react';
 import { useAppData } from '@/lib/useAppData';
 import type { AppData, Batch, Expense, Ingredient, Order, OrderSource, OrderStatus, PaymentMethod, Product, Purchase, PurchaseItem, Unit } from '@/lib/types';
 import { brl, ingredientUnitCost, monthlyMetrics, orderTotal, productBatchCost, productUnitCost, today, uid } from '@/lib/utils';
 import QrScanner from './QrScanner';
-import LoginPanel from './LoginPanel';
-import InstallPwaButton from './InstallPwaButton';
+import PwaInstallButton from './PwaInstallButton';
+import CloudLogin from './CloudLogin';
 
 const tabs = [
   ['dashboard', 'Resumo', BarChart3],
@@ -28,26 +28,19 @@ const tabs = [
 type Tab = typeof tabs[number][0];
 
 export default function AppShell() {
-  const {
-    data, setData, loaded, reset, exportJson, importJson,
-    user, authLoading, cloudEnabled, cloudReady, cloudStatus, cloudError,
-    signIn, signUp, signOut,
-  } = useAppData();
+  const { data, setData, loaded, reset, exportJson, importJson, session, cloudEnabled, cloudStatus, authError, signIn, signUp, signOut } = useAppData();
   const [tab, setTab] = useState<Tab>('dashboard');
   const [mobileNav, setMobileNav] = useState(false);
 
-  if (!loaded || authLoading) return <div className="loading"><div className="spinner" />Carregando Confeitaria Sweet...</div>;
-
-  if (cloudEnabled && !user) {
-    return <LoginPanel onSignIn={signIn} onSignUp={signUp} />;
-  }
+  if (!loaded) return <div className="loading"><div className="spinner" />Carregando Confeitaria Sweet...</div>;
+  if (cloudEnabled && !session) return <CloudLogin signIn={signIn} signUp={signUp} error={authError} />;
 
   return (
     <div className="app">
       <aside className={`sidebar ${mobileNav ? 'open' : ''}`}>
         <div className="brand">
           <Image src="/logo.png" width={92} height={92} alt="Sweet Dreams" priority />
-          <div><strong>Confeitaria Sweet</strong><span>gestão da confeitaria</span></div>
+          <div><strong>CONFEITARIA SWEET</strong><span>gestão da confeitaria</span></div>
           <button className="iconBtn mobileOnly" onClick={() => setMobileNav(false)}><X size={20}/></button>
         </div>
         <nav>
@@ -58,10 +51,10 @@ export default function AppShell() {
           ))}
         </nav>
         <div className="sidebarNote">
-          <span className={`dot ${cloudStatus === 'error' ? 'error' : 'live'}`} />
+          <span className={`dot ${cloudStatus === 'synced' ? 'live' : ''}`} />
           <div>
-            <strong>{cloudEnabled ? (cloudStatus === 'saving' ? 'Salvando na nuvem' : cloudStatus === 'connecting' ? 'Conectando...' : cloudStatus === 'error' ? 'Erro na nuvem' : 'Nuvem conectada') : 'Modo local'}</strong>
-            <small>{cloudEnabled ? (cloudError || (cloudReady ? 'Dados sincronizados entre seus aparelhos.' : 'Preparando sincronização...')) : 'Configure o Supabase para sincronizar.'}</small>
+            <strong>{cloudEnabled ? (cloudStatus === 'saving' ? 'Salvando na nuvem' : cloudStatus === 'error' ? 'Erro de sincronização' : 'Nuvem conectada') : 'Modo local'}</strong>
+            <small>{cloudEnabled ? (session?.user.email || 'Dados sincronizados') : 'Seus dados ficam neste navegador.'}</small>
           </div>
         </div>
       </aside>
@@ -70,12 +63,13 @@ export default function AppShell() {
         <header className="topbar">
           <button className="iconBtn mobileOnly" onClick={() => setMobileNav(true)}><Menu size={22}/></button>
           <div>
-            <p className="eyebrow">CONFEITARIA SWEET • PAINEL</p>
+            <p className="eyebrow">SWEET DREAMS • PAINEL</p>
             <h1>{tabs.find(t => t[0] === tab)?.[1]}</h1>
           </div>
           <div className="topActions">
-            <InstallPwaButton />
-            {user && <button className="iconBtn" title="Sair da conta" onClick={signOut}><LogOut size={18}/></button>}
+            <PwaInstallButton />
+            {cloudEnabled && <span className={`cloudPill ${cloudStatus}`} title={session?.user.email || ''}>{cloudStatus === 'error' ? <CloudOff size={15}/> : <Cloud size={15}/>} {cloudStatus === 'saving' ? 'Salvando' : cloudStatus === 'error' ? 'Erro' : 'Sincronizado'}</span>}
+            {cloudEnabled && <button className="iconBtn" onClick={signOut} title="Sair da conta"><LogOut size={18}/></button>}
             <span className="datePill">{new Date().toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric'})}</span>
           </div>
         </header>
@@ -327,8 +321,8 @@ function SettingsPanel({data,setData,reset,exportJson,importJson}:{data:AppData;
   return <section className="content settingsGrid">
     <div className="card"><div className="sectionTitle"><div><p className="eyebrow">NEGÓCIO</p><h3>Custos e padrões</h3></div></div><div className="formGrid oneCol"><Field label="Nome do negócio"><input value={data.settings.businessName} onChange={e=>setData(d=>({...d,settings:{...d.settings,businessName:e.target.value}}))}/></Field><Field label="DAS MEI mensal"><MoneyInput value={data.settings.monthlyMei} onChange={v=>setData(d=>({...d,settings:{...d.settings,monthlyMei:v}}))}/></Field><Field label="Outros custos fixos mensais"><MoneyInput value={data.settings.monthlyFixedCosts} onChange={v=>setData(d=>({...d,settings:{...d.settings,monthlyFixedCosts:v}}))}/></Field><Field label="Taxa padrão de entrega"><MoneyInput value={data.settings.defaultDeliveryFee} onChange={v=>setData(d=>({...d,settings:{...d.settings,defaultDeliveryFee:v}}))}/></Field><Field label="Taxa de cartão (%)"><input type="number" step="0.01" value={data.settings.cardFeePercent} onChange={e=>setData(d=>({...d,settings:{...d.settings,cardFeePercent:Number(e.target.value)}}))}/></Field></div></div>
     <div className="stack">
-      <div className="card"><div className="sectionTitle"><div><p className="eyebrow">BACKUP</p><h3>Seus dados</h3></div></div><p className="mutedText">Os dados ficam salvos na nuvem quando você está conectado. O backup JSON continua disponível como segurança extra.</p><div className="buttonStack"><button className="secondary full" onClick={exportJson}><Download size={17}/> Exportar backup JSON</button><label className="secondary full fileButton"><Upload size={17}/> Importar backup<input type="file" accept="application/json" onChange={e=>e.target.files?.[0]&&importJson(e.target.files[0])}/></label></div></div>
-      <div className="card cloudCard"><div className="sectionTitle"><div><p className="eyebrow">NUVEM</p><h3>Sincronização Supabase</h3></div><span className="softTag"><Cloud size={13}/> ativa</span></div><p>Use a mesma conta no PC e nos celulares para manter pedidos, estoque, produção e financeiro sincronizados.</p><code>sweet_app_state • realtime</code></div>
+      <div className="card"><div className="sectionTitle"><div><p className="eyebrow">BACKUP</p><h3>Seus dados</h3></div></div><p className="mutedText">Nesta primeira versão, tudo fica salvo no navegador. Faça backup antes de limpar os dados do navegador.</p><div className="buttonStack"><button className="secondary full" onClick={exportJson}><Download size={17}/> Exportar backup JSON</button><label className="secondary full fileButton"><Upload size={17}/> Importar backup<input type="file" accept="application/json" onChange={e=>e.target.files?.[0]&&importJson(e.target.files[0])}/></label></div></div>
+      <div className="card cloudCard"><div className="sectionTitle"><div><p className="eyebrow">PRÓXIMA ETAPA</p><h3>Sincronização Supabase</h3></div><span className="softTag">cloud-ready</span></div><p>O projeto já inclui o SQL inicial para ligar autenticação e sincronização na nuvem. Isso permite usar no PC e celular com os mesmos dados.</p><code>supabase/schema.sql</code></div>
       <div className="card dangerZone"><div><div className="sectionTitle"><div><p className="eyebrow">MANUTENÇÃO</p><h3>Dados de demonstração</h3></div></div><p className="mutedText">Volta o app para os dados de exemplo iniciais.</p></div><button className="dangerButton" onClick={()=>confirm('Resetar todos os dados locais?')&&reset()}><RotateCcw size={17}/> Resetar</button></div>
     </div>
   </section>
