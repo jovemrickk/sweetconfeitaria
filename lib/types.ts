@@ -8,6 +8,9 @@ export type Ingredient = {
   purchaseCost: number;
   stock: number;
   minStock: number;
+  packageLabel?: string;
+  defaultPurchasePackages?: number;
+  packageNote?: string;
 };
 
 export type RecipeItem = {
@@ -127,6 +130,7 @@ export type AppSettings = {
   monthlyFixedCosts: number;
   defaultDeliveryFee: number;
   cardFeePercent: number;
+  stockModelVersion?: number;
 };
 
 export type AppData = {
