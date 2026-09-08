@@ -264,18 +264,526 @@ function Production({data,setData}:{data:AppData;setData:React.Dispatch<React.Se
 
 function Catalog({data,setData}:{data:AppData;setData:React.Dispatch<React.SetStateAction<AppData>>}) {
   const [sub,setSub]=useState<'products'|'ingredients'>('products');
-  const [prodModal,setProdModal]=useState(false); const [ingModal,setIngModal]=useState(false);
-  const [ing,setIng]=useState<Partial<Ingredient>>({name:'',unit:'un',purchaseQuantity:1,purchaseCost:0,stock:0,minStock:0});
-  const [prod,setProd]=useState<Partial<Product>>({name:'',salePrice:0,yield:1,packagingCost:0,recipe:[],active:true});
-  const addIng=()=>{if(!ing.name)return;setData(d=>({...d,ingredients:[...d.ingredients,{id:uid(),name:ing.name!,unit:(ing.unit as Unit)||'un',purchaseQuantity:Number(ing.purchaseQuantity)||1,purchaseCost:Number(ing.purchaseCost)||0,stock:Number(ing.stock)||0,minStock:Number(ing.minStock)||0}]}));setIngModal(false)};
-  const addProd=()=>{if(!prod.name)return;setData(d=>({...d,products:[...d.products,{id:uid(),name:prod.name!,salePrice:Number(prod.salePrice)||0,yield:Number(prod.yield)||1,packagingCost:Number(prod.packagingCost)||0,recipe:prod.recipe||[],active:true}]}));setProdModal(false)};
-  const addRecipeItem=()=>setProd({...prod,recipe:[...(prod.recipe||[]),{ingredientId:data.ingredients[0]?.id||'',quantity:1}]});
+
+  const [prodModal,setProdModal]=useState(false);
+  const [ingModal,setIngModal]=useState(false);
+
+  const [editingIngId,setEditingIngId]=useState<string|null>(null);
+
+  const emptyIng:Partial<Ingredient>={
+    name:'',
+    unit:'un',
+    purchaseQuantity:1,
+    purchaseCost:0,
+    stock:0,
+    minStock:0
+  };
+
+  const [ing,setIng]=useState<Partial<Ingredient>>(emptyIng);
+
+  const [prod,setProd]=useState<Partial<Product>>({
+    name:'',
+    salePrice:0,
+    yield:1,
+    packagingCost:0,
+    recipe:[],
+    active:true
+  });
+
+  const openNewIng=()=>{
+    setEditingIngId(null);
+    setIng({...emptyIng});
+    setIngModal(true);
+  };
+
+  const openEditIng=(ingredient:Ingredient)=>{
+    setEditingIngId(ingredient.id);
+    setIng({...ingredient});
+    setIngModal(true);
+  };
+
+  const closeIng=()=>{
+    setIngModal(false);
+    setEditingIngId(null);
+    setIng({...emptyIng});
+  };
+
+  const saveIng=()=>{
+    if(!ing.name?.trim()) return;
+
+    const ingredient:Ingredient={
+      id:editingIngId || uid(),
+      name:ing.name.trim(),
+      unit:(ing.unit as Unit)||'un',
+      purchaseQuantity:Number(ing.purchaseQuantity)||1,
+      purchaseCost:Number(ing.purchaseCost)||0,
+      stock:Number(ing.stock)||0,
+      minStock:Number(ing.minStock)||0
+    };
+
+    setData(d=>({
+      ...d,
+      ingredients:editingIngId
+        ? d.ingredients.map(i=>i.id===editingIngId ? ingredient : i)
+        : [...d.ingredients,ingredient]
+    }));
+
+    closeIng();
+  };
+
+  const removeIng=(id:string)=>{
+    const used=data.products.some(p =>
+      p.recipe.some(r=>r.ingredientId===id)
+    );
+
+    if(used){
+      alert('Esse ingrediente está sendo usado na receita de um produto. Remova ele da ficha técnica primeiro.');
+      return;
+    }
+
+    if(!confirm('Excluir este ingrediente?')) return;
+
+    setData(d=>({
+      ...d,
+      ingredients:d.ingredients.filter(i=>i.id!==id)
+    }));
+  };
+
+  const addProd=()=>{
+    if(!prod.name) return;
+
+    setData(d=>({
+      ...d,
+      products:[
+        ...d.products,
+        {
+          id:uid(),
+          name:prod.name!,
+          salePrice:Number(prod.salePrice)||0,
+          yield:Number(prod.yield)||1,
+          packagingCost:Number(prod.packagingCost)||0,
+          recipe:prod.recipe||[],
+          active:true
+        }
+      ]
+    }));
+
+    setProdModal(false);
+  };
+
+  const addRecipeItem=()=>setProd({
+    ...prod,
+    recipe:[
+      ...(prod.recipe||[]),
+      {
+        ingredientId:data.ingredients[0]?.id||'',
+        quantity:1
+      }
+    ]
+  });
+
   return <section className="content">
-    <div className="toolbar"><div className="segmented"><button className={sub==='products'?'active':''} onClick={()=>setSub('products')}>Produtos</button><button className={sub==='ingredients'?'active':''} onClick={()=>setSub('ingredients')}>Ingredientes e insumos</button></div><button className="primary" onClick={()=>sub==='products'?setProdModal(true):setIngModal(true)}><Plus size={18}/> {sub==='products'?'Novo produto':'Novo ingrediente'}</button></div>
-    {sub==='products'?<div className="productGrid">{data.products.map(p=>{const cost=productUnitCost(p,data.ingredients);return <div className="card productCard" key={p.id}><div className="productTop"><div className="productEmoji">🍓</div><span className={`softTag ${p.active?'':'muted'}`}>{p.active?'Ativo':'Pausado'}</span></div><h3>{p.name}</h3><div className="priceLine"><strong>{brl(p.salePrice)}</strong><span>venda</span></div><div className="miniStats"><div><span>Custo/un.</span><b>{brl(cost)}</b></div><div><span>Margem</span><b>{p.salePrice?`${(((p.salePrice-cost)/p.salePrice)*100).toFixed(1)}%`:'0%'}</b></div><div><span>Rendimento</span><b>{p.yield} un.</b></div></div><div className="recipePreview"><span>Receita padrão</span>{p.recipe.map(r=><small key={r.ingredientId}>{data.ingredients.find(i=>i.id===r.ingredientId)?.name||'Ingrediente'} • {r.quantity} {data.ingredients.find(i=>i.id===r.ingredientId)?.unit}</small>)}</div></div>})}</div>:
-    <div className="card tableCard"><div className="tableWrap"><table><thead><tr><th>Ingrediente</th><th>Última compra</th><th>Custo por unidade</th><th>Estoque</th><th>Mínimo</th></tr></thead><tbody>{data.ingredients.map(i=><tr key={i.id}><td><strong>{i.name}</strong><small>unidade: {i.unit}</small></td><td>{brl(i.purchaseCost)}<small>{i.purchaseQuantity} {i.unit}</small></td><td><strong>{brl(ingredientUnitCost(i))}</strong><small>por {i.unit}</small></td><td><strong>{i.stock} {i.unit}</strong></td><td><span className={i.stock<=i.minStock?'dangerText':''}>{i.minStock} {i.unit}</span></td></tr>)}</tbody></table></div></div>}
-    {ingModal&&<Modal title="Novo ingrediente" onClose={()=>setIngModal(false)} footer={<button className="primary" onClick={addIng}><Save size={17}/> Salvar</button>}><div className="formGrid"><Field label="Nome" wide><input value={ing.name||''} onChange={e=>setIng({...ing,name:e.target.value})}/></Field><Field label="Unidade"><select value={ing.unit} onChange={e=>setIng({...ing,unit:e.target.value as Unit})}>{['un','g','kg','ml','l','pct'].map(u=><option key={u}>{u}</option>)}</select></Field><Field label="Quantidade comprada"><input type="number" value={ing.purchaseQuantity||0} onChange={e=>setIng({...ing,purchaseQuantity:Number(e.target.value)})}/></Field><Field label="Valor pago"><MoneyInput value={Number(ing.purchaseCost)||0} onChange={v=>setIng({...ing,purchaseCost:v})}/></Field><Field label="Estoque atual"><input type="number" value={ing.stock||0} onChange={e=>setIng({...ing,stock:Number(e.target.value)})}/></Field><Field label="Alerta de estoque"><input type="number" value={ing.minStock||0} onChange={e=>setIng({...ing,minStock:Number(e.target.value)})}/></Field></div></Modal>}
-    {prodModal&&<Modal title="Novo produto e ficha técnica" onClose={()=>setProdModal(false)} footer={<button className="primary" onClick={addProd}><Save size={17}/> Salvar produto</button>}><div className="formGrid"><Field label="Nome" wide><input value={prod.name||''} onChange={e=>setProd({...prod,name:e.target.value})}/></Field><Field label="Preço de venda"><MoneyInput value={Number(prod.salePrice)||0} onChange={v=>setProd({...prod,salePrice:v})}/></Field><Field label="Rendimento da receita"><input type="number" value={prod.yield||1} onChange={e=>setProd({...prod,yield:Number(e.target.value)})}/></Field><Field label="Embalagem por unidade"><MoneyInput value={Number(prod.packagingCost)||0} onChange={v=>setProd({...prod,packagingCost:v})}/></Field></div><div className="recipeBuilder"><div className="sectionTitle"><div><p className="eyebrow">FICHA TÉCNICA</p><h3>Ingredientes por receita</h3></div><button className="ghost" onClick={addRecipeItem}><Plus size={16}/> ingrediente</button></div>{(prod.recipe||[]).map((r,idx)=><div className="recipeLine" key={idx}><select value={r.ingredientId} onChange={e=>{const recipe=[...(prod.recipe||[])];recipe[idx]={...r,ingredientId:e.target.value};setProd({...prod,recipe})}}>{data.ingredients.map(i=><option value={i.id} key={i.id}>{i.name} ({i.unit})</option>)}</select><input type="number" value={r.quantity} onChange={e=>{const recipe=[...(prod.recipe||[])];recipe[idx]={...r,quantity:Number(e.target.value)};setProd({...prod,recipe})}}/><button className="iconBtn danger" onClick={()=>setProd({...prod,recipe:(prod.recipe||[]).filter((_,i)=>i!==idx)})}><Trash2 size={16}/></button></div>)}</div></Modal>}
+
+    <div className="toolbar">
+      <div className="segmented">
+        <button
+          className={sub==='products'?'active':''}
+          onClick={()=>setSub('products')}
+        >
+          Produtos
+        </button>
+
+        <button
+          className={sub==='ingredients'?'active':''}
+          onClick={()=>setSub('ingredients')}
+        >
+          Ingredientes e insumos
+        </button>
+      </div>
+
+      <button
+        className="primary"
+        onClick={()=>{
+          if(sub==='products'){
+            setProdModal(true);
+          }else{
+            openNewIng();
+          }
+        }}
+      >
+        <Plus size={18}/>
+        {sub==='products'?'Novo produto':'Novo ingrediente'}
+      </button>
+    </div>
+
+
+    {sub==='products'
+      ?
+      <div className="productGrid">
+
+        {data.products.map(p=>{
+          const cost=productUnitCost(p,data.ingredients);
+
+          return <div className="card productCard" key={p.id}>
+
+            <div className="productTop">
+              <div className="productEmoji">🍓</div>
+
+              <span className={`softTag ${p.active?'':'muted'}`}>
+                {p.active?'Ativo':'Pausado'}
+              </span>
+            </div>
+
+            <h3>{p.name}</h3>
+
+            <div className="priceLine">
+              <strong>{brl(p.salePrice)}</strong>
+              <span>venda</span>
+            </div>
+
+            <div className="miniStats">
+              <div>
+                <span>Custo/un.</span>
+                <b>{brl(cost)}</b>
+              </div>
+
+              <div>
+                <span>Margem</span>
+                <b>
+                  {p.salePrice
+                    ? `${(((p.salePrice-cost)/p.salePrice)*100).toFixed(1)}%`
+                    : '0%'
+                  }
+                </b>
+              </div>
+
+              <div>
+                <span>Rendimento</span>
+                <b>{p.yield} un.</b>
+              </div>
+            </div>
+
+            <div className="recipePreview">
+              <span>Receita padrão</span>
+
+              {p.recipe.map(r=>
+                <small key={r.ingredientId}>
+                  {data.ingredients.find(i=>i.id===r.ingredientId)?.name||'Ingrediente'}
+                  {' • '}
+                  {r.quantity}
+                  {' '}
+                  {data.ingredients.find(i=>i.id===r.ingredientId)?.unit}
+                </small>
+              )}
+            </div>
+
+          </div>
+        })}
+
+      </div>
+
+      :
+
+      <div className="card tableCard">
+
+        <div className="tableWrap">
+          <table>
+
+            <thead>
+              <tr>
+                <th>Ingrediente</th>
+                <th>Última compra</th>
+                <th>Custo por unidade</th>
+                <th>Estoque</th>
+                <th>Mínimo</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+              {data.ingredients.map(i=>
+                <tr key={i.id}>
+
+                  <td>
+                    <strong>{i.name}</strong>
+                    <small>unidade: {i.unit}</small>
+                  </td>
+
+                  <td>
+                    {brl(i.purchaseCost)}
+                    <small>
+                      {i.purchaseQuantity} {i.unit}
+                    </small>
+                  </td>
+
+                  <td>
+                    <strong>{brl(ingredientUnitCost(i))}</strong>
+                    <small>por {i.unit}</small>
+                  </td>
+
+                  <td>
+                    <strong>
+                      {i.stock} {i.unit}
+                    </strong>
+                  </td>
+
+                  <td>
+                    <span className={i.stock<=i.minStock?'dangerText':''}>
+                      {i.minStock} {i.unit}
+                    </span>
+                  </td>
+
+                  <td>
+                    <div style={{display:'flex',gap:8}}>
+
+                      <button
+                        className="iconBtn"
+                        title="Editar ingrediente"
+                        onClick={()=>openEditIng(i)}
+                      >
+                        <Pencil size={16}/>
+                      </button>
+
+                      <button
+                        className="iconBtn danger"
+                        title="Excluir ingrediente"
+                        onClick={()=>removeIng(i.id)}
+                      >
+                        <Trash2 size={16}/>
+                      </button>
+
+                    </div>
+                  </td>
+
+                </tr>
+              )}
+
+            </tbody>
+
+          </table>
+        </div>
+
+      </div>
+    }
+
+
+    {ingModal&&
+      <Modal
+        title={editingIngId?'Editar ingrediente':'Novo ingrediente'}
+        onClose={closeIng}
+        footer={
+          <>
+            <button
+              className="secondary"
+              onClick={closeIng}
+            >
+              Cancelar
+            </button>
+
+            <button
+              className="primary"
+              onClick={saveIng}
+            >
+              <Save size={17}/>
+              {editingIngId?'Salvar alterações':'Salvar'}
+            </button>
+          </>
+        }
+      >
+
+        <div className="formGrid">
+
+          <Field label="Nome" wide>
+            <input
+              value={ing.name||''}
+              onChange={e=>setIng({...ing,name:e.target.value})}
+            />
+          </Field>
+
+          <Field label="Unidade">
+            <select
+              value={ing.unit}
+              onChange={e=>setIng({...ing,unit:e.target.value as Unit})}
+            >
+              {['un','g','kg','ml','l','pct'].map(u=>
+                <option key={u}>{u}</option>
+              )}
+            </select>
+          </Field>
+
+          <Field label="Quantidade comprada">
+            <input
+              type="number"
+              value={ing.purchaseQuantity||0}
+              onChange={e=>setIng({
+                ...ing,
+                purchaseQuantity:Number(e.target.value)
+              })}
+            />
+          </Field>
+
+          <Field label="Valor pago">
+            <MoneyInput
+              value={Number(ing.purchaseCost)||0}
+              onChange={v=>setIng({...ing,purchaseCost:v})}
+            />
+          </Field>
+
+          <Field label="Estoque atual">
+            <input
+              type="number"
+              value={ing.stock||0}
+              onChange={e=>setIng({
+                ...ing,
+                stock:Number(e.target.value)
+              })}
+            />
+          </Field>
+
+          <Field label="Alerta de estoque">
+            <input
+              type="number"
+              value={ing.minStock||0}
+              onChange={e=>setIng({
+                ...ing,
+                minStock:Number(e.target.value)
+              })}
+            />
+          </Field>
+
+        </div>
+
+      </Modal>
+    }
+
+
+    {prodModal&&
+      <Modal
+        title="Novo produto e ficha técnica"
+        onClose={()=>setProdModal(false)}
+        footer={
+          <button
+            className="primary"
+            onClick={addProd}
+          >
+            <Save size={17}/>
+            Salvar produto
+          </button>
+        }
+      >
+
+        <div className="formGrid">
+
+          <Field label="Nome" wide>
+            <input
+              value={prod.name||''}
+              onChange={e=>setProd({...prod,name:e.target.value})}
+            />
+          </Field>
+
+          <Field label="Preço de venda">
+            <MoneyInput
+              value={Number(prod.salePrice)||0}
+              onChange={v=>setProd({...prod,salePrice:v})}
+            />
+          </Field>
+
+          <Field label="Rendimento da receita">
+            <input
+              type="number"
+              value={prod.yield||1}
+              onChange={e=>setProd({
+                ...prod,
+                yield:Number(e.target.value)
+              })}
+            />
+          </Field>
+
+          <Field label="Embalagem por unidade">
+            <MoneyInput
+              value={Number(prod.packagingCost)||0}
+              onChange={v=>setProd({...prod,packagingCost:v})}
+            />
+          </Field>
+
+        </div>
+
+        <div className="recipeBuilder">
+
+          <div className="sectionTitle">
+            <div>
+              <p className="eyebrow">FICHA TÉCNICA</p>
+              <h3>Ingredientes por receita</h3>
+            </div>
+
+            <button
+              className="ghost"
+              onClick={addRecipeItem}
+            >
+              <Plus size={16}/>
+              ingrediente
+            </button>
+          </div>
+
+          {(prod.recipe||[]).map((r,idx)=>
+            <div className="recipeLine" key={idx}>
+
+              <select
+                value={r.ingredientId}
+                onChange={e=>{
+                  const recipe=[...(prod.recipe||[])];
+
+                  recipe[idx]={
+                    ...r,
+                    ingredientId:e.target.value
+                  };
+
+                  setProd({...prod,recipe});
+                }}
+              >
+
+                {data.ingredients.map(i=>
+                  <option value={i.id} key={i.id}>
+                    {i.name} ({i.unit})
+                  </option>
+                )}
+
+              </select>
+
+              <input
+                type="number"
+                value={r.quantity}
+                onChange={e=>{
+                  const recipe=[...(prod.recipe||[])];
+
+                  recipe[idx]={
+                    ...r,
+                    quantity:Number(e.target.value)
+                  };
+
+                  setProd({...prod,recipe});
+                }}
+              />
+
+              <button
+                className="iconBtn danger"
+                onClick={()=>setProd({
+                  ...prod,
+                  recipe:(prod.recipe||[]).filter((_,i)=>i!==idx)
+                })}
+              >
+                <Trash2 size={16}/>
+              </button>
+
+            </div>
+          )}
+
+        </div>
+
+      </Modal>
+    }
+
   </section>
 }
 
