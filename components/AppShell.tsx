@@ -309,17 +309,211 @@ function Purchases({data,setData}:{data:AppData;setData:React.Dispatch<React.Set
 }
 
 function Finance({data,setData}:{data:AppData;setData:React.Dispatch<React.SetStateAction<AppData>>}) {
-  const m=monthlyMetrics(data); const [modal,setModal]=useState(false); const [exp,setExp]=useState<Partial<Expense>>({date:today(),category:'Outro',description:'',amount:0,recurring:false});
-  const save=()=>{if(!exp.description)return;setData(d=>({...d,expenses:[{id:uid(),date:exp.date||today(),category:(exp.category as Expense['category'])||'Outro',description:exp.description!,amount:Number(exp.amount)||0,recurring:!!exp.recurring},...d.expenses]}));setModal(false)};
+  const m = monthlyMetrics(data);
+  const emptyExpense: Partial<Expense> = {
+    date: today(),
+    category: 'Outro',
+    description: '',
+    amount: 0,
+    recurring: false
+  };
+
+  const [modal,setModal] = useState(false);
+  const [editingId,setEditingId] = useState<string | null>(null);
+  const [exp,setExp] = useState<Partial<Expense>>(emptyExpense);
+
+  const openNew = () => {
+    setEditingId(null);
+    setExp({...emptyExpense, date: today()});
+    setModal(true);
+  };
+
+  const openEdit = (expense: Expense) => {
+    setEditingId(expense.id);
+    setExp({...expense});
+    setModal(true);
+  };
+
+  const closeModal = () => {
+    setModal(false);
+    setEditingId(null);
+    setExp({...emptyExpense, date: today()});
+  };
+
+  const save = () => {
+    if(!exp.description?.trim()) return;
+
+    const expense: Expense = {
+      id: editingId || uid(),
+      date: exp.date || today(),
+      category: (exp.category as Expense['category']) || 'Outro',
+      description: exp.description.trim(),
+      amount: Number(exp.amount) || 0,
+      recurring: !!exp.recurring
+    };
+
+    setData(d => ({
+      ...d,
+      expenses: editingId
+        ? d.expenses.map(e => e.id === editingId ? expense : e)
+        : [expense, ...d.expenses]
+    }));
+
+    closeModal();
+  };
+
+  const remove = (id:string) => {
+    if(!confirm('Excluir esta despesa? Essa ação não pode ser desfeita.')) return;
+    setData(d => ({
+      ...d,
+      expenses: d.expenses.filter(e => e.id !== id)
+    }));
+  };
+
   return <section className="content">
-    <div className="toolbar"><div><p className="mutedText noMargin">Resultado calculado a partir dos pedidos, custos e despesas.</p></div><button className="primary" onClick={()=>setModal(true)}><Plus size={18}/> Nova despesa</button></div>
-    <div className="metricsGrid"><Metric icon={CircleDollarSign} label="Faturamento" value={brl(m.revenue)} note="produto + entrega"/><Metric icon={PackageOpen} label="CMV estimado" value={brl(m.cogs)} note="custo dos produtos vendidos"/><Metric icon={WalletCards} label="Despesas do mês" value={brl(m.expenses+m.fixed)} note={`inclui ${brl(m.fixed)} fixos`}/><Metric icon={TrendingUp} label="Lucro estimado" value={brl(m.profit)} note={m.revenue?`${((m.profit/m.revenue)*100).toFixed(1)}% de margem líquida`:'sem vendas'} positive={m.profit>=0}/></div>
-    <div className="twoCols">
-      <div className="card"><div className="sectionTitle"><div><p className="eyebrow">MARKETING</p><h3>Retorno dos anúncios</h3></div><Megaphone size={20}/></div><div className="adMetrics"><div><span>Gasto Meta Ads</span><strong>{brl(m.ads)}</strong></div><div><span>Pedidos atribuídos</span><strong>{m.adOrders}</strong></div><div><span>CPA</span><strong>{m.adOrders?brl(m.cpa):'—'}</strong></div><div><span>ROAS</span><strong>{m.ads?`${m.roas.toFixed(2)}x`:'—'}</strong></div></div><small className="helper">Para atribuir, selecione “Facebook Ads” na origem do pedido.</small></div>
-      <div className="card"><div className="sectionTitle"><div><p className="eyebrow">RESULTADO</p><h3>De onde sai o lucro</h3></div></div><div className="waterfall"><div><span>Faturamento</span><b>{brl(m.revenue)}</b></div><div><span>− custo dos produtos</span><b>{brl(m.cogs)}</b></div><div><span>− despesas variáveis</span><b>{brl(m.expenses)}</b></div><div><span>− MEI + fixos</span><b>{brl(m.fixed)}</b></div><div className="total"><span>= lucro estimado</span><b>{brl(m.profit)}</b></div></div></div>
+    <div className="toolbar">
+      <div>
+        <p className="mutedText noMargin">Resultado calculado a partir dos pedidos, custos e despesas.</p>
+      </div>
+      <button className="primary" onClick={openNew}>
+        <Plus size={18}/> Nova despesa
+      </button>
     </div>
-    <div className="card tableCard"><div className="sectionTitle padded"><div><p className="eyebrow">SAÍDAS</p><h3>Despesas</h3></div></div><div className="tableWrap"><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Recorrente</th><th>Valor</th></tr></thead><tbody>{data.expenses.map(e=><tr key={e.id}><td>{new Date(`${e.date}T12:00`).toLocaleDateString('pt-BR')}</td><td><span className="softTag">{e.category}</span></td><td>{e.description}</td><td>{e.recurring?'Sim':'Não'}</td><td><strong>{brl(e.amount)}</strong></td></tr>)}</tbody></table></div></div>
-    {modal&&<Modal title="Nova despesa" onClose={()=>setModal(false)} footer={<button className="primary" onClick={save}><Save size={17}/> Salvar</button>}><div className="formGrid"><Field label="Data"><input type="date" value={exp.date} onChange={e=>setExp({...exp,date:e.target.value})}/></Field><Field label="Categoria"><select value={exp.category} onChange={e=>setExp({...exp,category:e.target.value as Expense['category']})}>{['Anúncios','Entrega','Utensílios','Taxas','MEI/DAS','Sistema','Outro'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Descrição" wide><input value={exp.description||''} onChange={e=>setExp({...exp,description:e.target.value})}/></Field><Field label="Valor"><MoneyInput value={Number(exp.amount)||0} onChange={v=>setExp({...exp,amount:v})}/></Field><Field label="Recorrente"><label className="check"><input type="checkbox" checked={!!exp.recurring} onChange={e=>setExp({...exp,recurring:e.target.checked})}/> Repetir mensalmente</label></Field></div></Modal>}
+
+    <div className="metricsGrid">
+      <Metric icon={CircleDollarSign} label="Faturamento" value={brl(m.revenue)} note="produto + entrega"/>
+      <Metric icon={PackageOpen} label="CMV estimado" value={brl(m.cogs)} note="custo dos produtos vendidos"/>
+      <Metric icon={WalletCards} label="Despesas do mês" value={brl(m.expenses+m.fixed)} note={`inclui ${brl(m.fixed)} fixos`}/>
+      <Metric icon={TrendingUp} label="Lucro estimado" value={brl(m.profit)} note={m.revenue?`${((m.profit/m.revenue)*100).toFixed(1)}% de margem líquida`:'sem vendas'} positive={m.profit>=0}/>
+    </div>
+
+    <div className="twoCols">
+      <div className="card">
+        <div className="sectionTitle">
+          <div><p className="eyebrow">MARKETING</p><h3>Retorno dos anúncios</h3></div>
+          <Megaphone size={20}/>
+        </div>
+        <div className="adMetrics">
+          <div><span>Gasto Meta Ads</span><strong>{brl(m.ads)}</strong></div>
+          <div><span>Pedidos atribuídos</span><strong>{m.adOrders}</strong></div>
+          <div><span>CPA</span><strong>{m.adOrders?brl(m.cpa):'—'}</strong></div>
+          <div><span>ROAS</span><strong>{m.ads?`${m.roas.toFixed(2)}x`:'—'}</strong></div>
+        </div>
+        <small className="helper">Para atribuir, selecione “Facebook Ads” na origem do pedido.</small>
+      </div>
+
+      <div className="card">
+        <div className="sectionTitle">
+          <div><p className="eyebrow">RESULTADO</p><h3>De onde sai o lucro</h3></div>
+        </div>
+        <div className="waterfall">
+          <div><span>Faturamento</span><b>{brl(m.revenue)}</b></div>
+          <div><span>− custo dos produtos</span><b>{brl(m.cogs)}</b></div>
+          <div><span>− despesas variáveis</span><b>{brl(m.expenses)}</b></div>
+          <div><span>− MEI + fixos</span><b>{brl(m.fixed)}</b></div>
+          <div className="total"><span>= lucro estimado</span><b>{brl(m.profit)}</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div className="card tableCard">
+      <div className="sectionTitle padded">
+        <div><p className="eyebrow">SAÍDAS</p><h3>Despesas</h3></div>
+      </div>
+
+      <div className="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Categoria</th>
+              <th>Descrição</th>
+              <th>Recorrente</th>
+              <th>Valor</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {data.expenses.map(e => (
+              <tr key={e.id}>
+                <td>{new Date(`${e.date}T12:00`).toLocaleDateString('pt-BR')}</td>
+                <td><span className="softTag">{e.category}</span></td>
+                <td>{e.description}</td>
+                <td>{e.recurring?'Sim':'Não'}</td>
+                <td><strong>{brl(e.amount)}</strong></td>
+                <td>
+                  <div style={{display:'flex',gap:8}}>
+                    <button
+                      className="iconBtn"
+                      title="Editar despesa"
+                      onClick={()=>openEdit(e)}
+                    >
+                      <Pencil size={16}/>
+                    </button>
+                    <button
+                      className="iconBtn danger"
+                      title="Excluir despesa"
+                      onClick={()=>remove(e.id)}
+                    >
+                      <Trash2 size={16}/>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+
+            {!data.expenses.length && (
+              <tr>
+                <td colSpan={6}>
+                  <Empty icon={WalletCards} title="Nenhuma despesa registrada" text="Cadastre os gastos da confeitaria por aqui."/>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {modal&&<Modal
+      title={editingId ? 'Editar despesa' : 'Nova despesa'}
+      onClose={closeModal}
+      footer={
+        <>
+          <button className="secondary" onClick={closeModal}>Cancelar</button>
+          <button className="primary" onClick={save}>
+            <Save size={17}/> {editingId ? 'Salvar alterações' : 'Salvar'}
+          </button>
+        </>
+      }
+    >
+      <div className="formGrid">
+        <Field label="Data">
+          <input type="date" value={exp.date||today()} onChange={e=>setExp({...exp,date:e.target.value})}/>
+        </Field>
+
+        <Field label="Categoria">
+          <select value={exp.category} onChange={e=>setExp({...exp,category:e.target.value as Expense['category']})}>
+            {['Anúncios','Entrega','Utensílios','Taxas','MEI/DAS','Sistema','Outro'].map(x=><option key={x}>{x}</option>)}
+          </select>
+        </Field>
+
+        <Field label="Descrição" wide>
+          <input value={exp.description||''} onChange={e=>setExp({...exp,description:e.target.value})}/>
+        </Field>
+
+        <Field label="Valor">
+          <MoneyInput value={Number(exp.amount)||0} onChange={v=>setExp({...exp,amount:v})}/>
+        </Field>
+
+        <Field label="Recorrente">
+          <label className="check">
+            <input type="checkbox" checked={!!exp.recurring} onChange={e=>setExp({...exp,recurring:e.target.checked})}/>
+            Repetir mensalmente
+          </label>
+        </Field>
+      </div>
+    </Modal>}
   </section>
 }
 
