@@ -1,4 +1,4 @@
-import type { AppData, FinanceState, Ingredient, Product, Unit } from './types';
+import type { AppData, FinanceState, Ingredient, Product, StockItemCategory, Unit } from './types';
 import { today } from './utils';
 
 const ids = {
@@ -88,6 +88,13 @@ const clean = (value: string) => value
   .trim()
   .toLowerCase();
 
+const categoryForName = (name: string): StockItemCategory => {
+  const n = clean(name);
+  if (/(embal|pote|potinho|tampa|sacola|saquinho|adesivo|caixa para|forma|copinho|copo)/.test(n)) return 'Embalagem';
+  if (/(palito|colher descart|guardanapo|fita|lac[rç]e|etiqueta)/.test(n)) return 'Insumo';
+  return 'Ingrediente';
+};
+
 type IngredientPreset = {
   unit: Unit;
   purchaseQuantity: number;
@@ -175,6 +182,8 @@ export function normalizeAppData(input: unknown): AppData {
     ingredients = ingredients.map(migrateIngredient);
     products = migrateMainRecipe(products, ingredients);
   }
+
+  ingredients = ingredients.map(i => ({...i, category: i.category || categoryForName(i.name)}));
 
   return {
     ingredients,

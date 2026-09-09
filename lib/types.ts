@@ -1,8 +1,10 @@
 export type Unit = 'un' | 'g' | 'kg' | 'ml' | 'l' | 'pct';
+export type StockItemCategory = 'Ingrediente' | 'Embalagem' | 'Insumo';
 
 export type Ingredient = {
   id: string;
   name: string;
+  category?: StockItemCategory;
   unit: Unit;
   purchaseQuantity: number;
   purchaseCost: number;
@@ -25,6 +27,7 @@ export type Product = {
   yield: number;
   packagingCost: number;
   recipe: RecipeItem[];
+  preparation?: string;
   active: boolean;
 };
 
