@@ -302,6 +302,7 @@ function Catalog({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSt
   const [sub,setSub]=useState<'products'|'ingredients'>('products');
   const [prodModal,setProdModal]=useState(false);
   const [ingModal,setIngModal]=useState(false);
+  const [editingProdId,setEditingProdId]=useState<string|null>(null);
   const [editingIngId,setEditingIngId]=useState<string|null>(null);
   const [ingRecipeQty,setIngRecipeQty]=useState(0);
 
@@ -310,8 +311,9 @@ function Catalog({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSt
     name:'',unit:'un',purchaseQuantity:1,purchaseCost:0,stock:0,minStock:0,
     packageLabel:'pacote',defaultPurchasePackages:1,packageNote:''
   };
+  const emptyProd:Partial<Product>={name:'',salePrice:0,yield:1,packagingCost:0,recipe:[],active:true};
   const [ing,setIng]=useState<Partial<Ingredient>>(emptyIng);
-  const [prod,setProd]=useState<Partial<Product>>({name:'',salePrice:0,yield:1,packagingCost:0,recipe:[],active:true});
+  const [prod,setProd]=useState<Partial<Product>>(emptyProd);
 
   const recipeUsage=(ingredientId:string)=>primaryProduct?.recipe.find(r=>r.ingredientId===ingredientId)?.quantity||0;
   const fmt=(n:number)=>Number.isInteger(n)?String(n):Number(n.toFixed(2)).toString();
@@ -376,20 +378,63 @@ function Catalog({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSt
     setData(d=>({...d,ingredients:d.ingredients.filter(i=>i.id!==id)}));
   };
 
-  const addProd=()=>{
-    if(!prod.name) return;
-    setData(d=>({...d,products:[...d.products,{id:uid(),name:prod.name!,salePrice:Number(prod.salePrice)||0,yield:Number(prod.yield)||1,packagingCost:Number(prod.packagingCost)||0,recipe:prod.recipe||[],active:true}]}));
-    setProdModal(false);
+  const openNewProd=()=>{
+    setEditingProdId(null);
+    setProd({...emptyProd,recipe:[]});
+    setProdModal(true);
   };
+
+  const openEditProd=(product:Product)=>{
+    setEditingProdId(product.id);
+    setProd({...product,recipe:product.recipe.map(r=>({...r}))});
+    setProdModal(true);
+  };
+
+  const closeProd=()=>{
+    setProdModal(false);
+    setEditingProdId(null);
+    setProd({...emptyProd,recipe:[]});
+  };
+
+  const saveProd=()=>{
+    if(!prod.name?.trim()) return;
+    const id=editingProdId||uid();
+    const product:Product={
+      id,
+      name:prod.name.trim(),
+      salePrice:Number(prod.salePrice)||0,
+      yield:Math.max(1,Number(prod.yield)||1),
+      packagingCost:Number(prod.packagingCost)||0,
+      recipe:(prod.recipe||[]).filter(r=>r.ingredientId).map(r=>({...r,quantity:Number(r.quantity)||0})),
+      active:prod.active!==false,
+    };
+    setData(d=>({
+      ...d,
+      products:editingProdId?d.products.map(p=>p.id===editingProdId?product:p):[...d.products,product]
+    }));
+    closeProd();
+  };
+
+  const removeProd=(id:string)=>{
+    const orders=data.orders.filter(o=>o.productId===id).length;
+    const batches=data.batches.filter(b=>b.productId===id).length;
+    if(orders||batches){
+      alert(`Este produto já possui histórico (${orders} pedido${orders===1?'':'s'} e ${batches} lote${batches===1?'':'s'}). Para não quebrar seus relatórios, edite o produto e desmarque “Produto ativo” em vez de excluir.`);
+      return;
+    }
+    if(!confirm('Excluir este produto? Essa ação não pode ser desfeita.')) return;
+    setData(d=>({...d,products:d.products.filter(p=>p.id!==id)}));
+  };
+
   const addRecipeItem=()=>setProd({...prod,recipe:[...(prod.recipe||[]),{ingredientId:data.ingredients[0]?.id||'',quantity:1}]});
 
   return <section className="content">
     <div className="toolbar">
       <div className="segmented"><button className={sub==='products'?'active':''} onClick={()=>setSub('products')}>Produtos</button><button className={sub==='ingredients'?'active':''} onClick={()=>setSub('ingredients')}>Ingredientes e insumos</button></div>
-      <button className="primary" onClick={()=>sub==='products'?setProdModal(true):openNewIng()}><Plus size={18}/> {sub==='products'?'Novo produto':'Novo ingrediente'}</button>
+      <button className="primary" onClick={()=>sub==='products'?openNewProd():openNewIng()}><Plus size={18}/> {sub==='products'?'Novo produto':'Novo ingrediente'}</button>
     </div>
 
-    {sub==='products'?<div className="productGrid">{data.products.map(p=>{const cost=productUnitCost(p,data.ingredients);return <div className="card productCard" key={p.id}><div className="productTop"><div className="productEmoji">🍓</div><span className={`softTag ${p.active?'':'muted'}`}>{p.active?'Ativo':'Pausado'}</span></div><h3>{p.name}</h3><div className="priceLine"><strong>{brl(p.salePrice)}</strong><span>venda</span></div><div className="miniStats"><div><span>Custo/un.</span><b>{brl(cost)}</b></div><div><span>Margem</span><b>{p.salePrice?`${(((p.salePrice-cost)/p.salePrice)*100).toFixed(1)}%`:'0%'}</b></div><div><span>Rendimento</span><b>{p.yield} un.</b></div></div><div className="recipePreview"><span>Receita padrão</span>{p.recipe.map(r=>{const item=data.ingredients.find(i=>i.id===r.ingredientId);return <small key={r.ingredientId}>{item?.name||'Ingrediente'} • {fmt(r.quantity)} {item?.unit}</small>})}</div></div>})}</div>:
+    {sub==='products'?<div className="productGrid">{data.products.map(p=>{const cost=productUnitCost(p,data.ingredients);return <div className="card productCard" key={p.id}><div className="productTop"><div className="productEmoji">🍓</div><div style={{display:'flex',alignItems:'center',gap:8}}><span className={`softTag ${p.active?'':'muted'}`}>{p.active?'Ativo':'Pausado'}</span><div className="rowActions"><button className="iconBtn" title="Editar produto" onClick={()=>openEditProd(p)}><Pencil size={16}/></button><button className="iconBtn danger" title="Excluir produto" onClick={()=>removeProd(p.id)}><Trash2 size={16}/></button></div></div></div><h3>{p.name}</h3><div className="priceLine"><strong>{brl(p.salePrice)}</strong><span>venda</span></div><div className="miniStats"><div><span>Custo/un.</span><b>{brl(cost)}</b></div><div><span>Margem</span><b>{p.salePrice?`${(((p.salePrice-cost)/p.salePrice)*100).toFixed(1)}%`:'0%'}</b></div><div><span>Rendimento</span><b>{p.yield} un.</b></div></div><div className="recipePreview"><span>Receita padrão</span>{p.recipe.map(r=>{const item=data.ingredients.find(i=>i.id===r.ingredientId);return <small key={r.ingredientId}>{item?.name||'Ingrediente'} • {fmt(r.quantity)} {item?.unit}</small>})}</div></div>})}</div>:
     <>
       <div className="heroCard" style={{marginBottom:16}}>
         <div><span className="softTag">ESTOQUE SEM CONFUSÃO</span><h2>Compra é embalagem. Receita usa g, ml ou unidades.</h2><p>Ex.: chocolate = 1 pacote de 350 g por R$ 24,90; a receita usa os 350 g. Morango = compra padrão de 2 bandejas, mas o estoque mostra quantos morangos bons realmente sobraram.</p></div>
@@ -429,7 +474,7 @@ function Catalog({data,setData}:{data:AppData;setData:React.Dispatch<React.SetSt
       <div className="totalPreview"><span>Compra normal</span><strong>{Math.max(1,Number(ing.defaultPurchasePackages)||1)} × {ing.packageLabel||'embalagem'} = {fmt(Math.max(1,Number(ing.defaultPurchasePackages)||1)*(Number(ing.purchaseQuantity)||0))} {ing.unit} • {brl(Math.max(1,Number(ing.defaultPurchasePackages)||1)*(Number(ing.purchaseCost)||0))}</strong></div>
     </Modal>}
 
-    {prodModal&&<Modal title="Novo produto e ficha técnica" onClose={()=>setProdModal(false)} footer={<button className="primary" onClick={addProd}><Save size={17}/> Salvar produto</button>}><div className="formGrid"><Field label="Nome" wide><input value={prod.name||''} onChange={e=>setProd({...prod,name:e.target.value})}/></Field><Field label="Preço de venda"><MoneyInput value={Number(prod.salePrice)||0} onChange={v=>setProd({...prod,salePrice:v})}/></Field><Field label="Rendimento da receita"><input type="number" value={prod.yield||1} onChange={e=>setProd({...prod,yield:Number(e.target.value)})}/></Field><Field label="Embalagem por unidade"><MoneyInput value={Number(prod.packagingCost)||0} onChange={v=>setProd({...prod,packagingCost:v})}/></Field></div><div className="recipeBuilder"><div className="sectionTitle"><div><p className="eyebrow">FICHA TÉCNICA</p><h3>Ingredientes por receita</h3></div><button className="ghost" onClick={addRecipeItem}><Plus size={16}/> ingrediente</button></div>{(prod.recipe||[]).map((r,idx)=><div className="recipeLine" key={idx}><select value={r.ingredientId} onChange={e=>{const recipe=[...(prod.recipe||[])];recipe[idx]={...r,ingredientId:e.target.value};setProd({...prod,recipe})}}>{data.ingredients.map(i=><option value={i.id} key={i.id}>{i.name} ({i.unit})</option>)}</select><input type="number" value={r.quantity} onChange={e=>{const recipe=[...(prod.recipe||[])];recipe[idx]={...r,quantity:Number(e.target.value)};setProd({...prod,recipe})}}/><button className="iconBtn danger" onClick={()=>setProd({...prod,recipe:(prod.recipe||[]).filter((_,i)=>i!==idx)})}><Trash2 size={16}/></button></div>)}</div></Modal>}
+    {prodModal&&<Modal title={editingProdId?'Editar produto e ficha técnica':'Novo produto e ficha técnica'} onClose={closeProd} footer={<><button className="secondary" onClick={closeProd}>Cancelar</button><button className="primary" onClick={saveProd}><Save size={17}/> {editingProdId?'Salvar alterações':'Salvar produto'}</button></>}><div className="formGrid"><Field label="Nome" wide><input value={prod.name||''} onChange={e=>setProd({...prod,name:e.target.value})}/></Field><Field label="Preço de venda"><MoneyInput value={Number(prod.salePrice)||0} onChange={v=>setProd({...prod,salePrice:v})}/></Field><Field label="Rendimento da receita"><input type="number" min="1" value={prod.yield||1} onChange={e=>setProd({...prod,yield:Number(e.target.value)})}/></Field><Field label="Embalagem por unidade"><MoneyInput value={Number(prod.packagingCost)||0} onChange={v=>setProd({...prod,packagingCost:v})}/></Field><Field label="Status"><label className="check"><input type="checkbox" checked={prod.active!==false} onChange={e=>setProd({...prod,active:e.target.checked})}/> Produto ativo</label></Field></div><div className="recipeBuilder"><div className="sectionTitle"><div><p className="eyebrow">FICHA TÉCNICA</p><h3>Ingredientes por receita</h3></div><button className="ghost" onClick={addRecipeItem}><Plus size={16}/> ingrediente</button></div>{(prod.recipe||[]).map((r,idx)=><div className="recipeLine" key={idx}><select value={r.ingredientId} onChange={e=>{const recipe=[...(prod.recipe||[])];recipe[idx]={...r,ingredientId:e.target.value};setProd({...prod,recipe})}}>{data.ingredients.map(i=><option value={i.id} key={i.id}>{i.name} ({i.unit})</option>)}</select><input type="number" min="0" step="0.01" value={r.quantity} onChange={e=>{const recipe=[...(prod.recipe||[])];recipe[idx]={...r,quantity:Number(e.target.value)};setProd({...prod,recipe})}}/><button className="iconBtn danger" title="Remover ingrediente da receita" onClick={()=>setProd({...prod,recipe:(prod.recipe||[]).filter((_,i)=>i!==idx)})}><Trash2 size={16}/></button></div>)}</div></Modal>}
   </section>
 }
 
