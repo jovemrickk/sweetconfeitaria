@@ -5,8 +5,29 @@ export const runtime = 'nodejs';
 
 const money = (value?: string | null) => {
   if (!value) return 0;
-  const clean = value.replace(/[^0-9,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
-  const n = Number.parseFloat(clean);
+
+  // Portais de NFC-e às vezes misturam contador/índice com o valor no mesmo nó.
+  // Ex.: "4 24,96". O parser antigo removia o espaço e virava 424,96.
+  // Pegamos o ÚLTIMO token com aparência de valor monetário, sem colar números soltos.
+  const text = String(value).replace(/\u00a0/g, ' ').trim();
+  const tokens = text.match(/-?\d{1,3}(?:\.\d{3})*(?:,\d{2,4})|-?\d+(?:[.,]\d{2,4})/g);
+  const token = tokens?.at(-1);
+
+  if (token) {
+    const normalized = token.includes(',')
+      ? token.replace(/\./g, '').replace(',', '.')
+      : token;
+    const n = Number.parseFloat(normalized);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  // Fallback para valores simples sem casas decimais, como "5".
+  const simple = text.match(/-?\d+(?:[.,]\d+)?/g)?.at(-1);
+  if (!simple) return 0;
+  const normalized = simple.includes(',')
+    ? simple.replace(/\./g, '').replace(',', '.')
+    : simple;
+  const n = Number.parseFloat(normalized);
   return Number.isFinite(n) ? n : 0;
 };
 
