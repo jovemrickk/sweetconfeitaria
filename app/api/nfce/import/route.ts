@@ -57,6 +57,39 @@ function parseSpStyle($: cheerio.CheerioAPI) {
   return items;
 }
 
+function decodeEmbeddedHtml(value: string) {
+  return value
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/\\\//g, '/')
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'")
+    .replace(/\\r|\\n|\\t/g, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&amp;/gi, '&');
+}
+
+// Alguns portais da SEFAZ não colocam todos os itens no DOM inicial.
+// Eles entregam o DANFE inteiro dentro de uma string Javascript (new DanfeNFCe(...)).
+// Nesse caso o Cheerio enxergava só parte da nota e o total não batia com os itens.
+function parseEmbeddedDanfe($: cheerio.CheerioAPI) {
+  let best: Array<{name:string;quantity:number;unit:string;unitPrice:number;total:number}> = [];
+  $('script').each((_, el) => {
+    const raw = $(el).html() || $(el).text() || '';
+    if (!/tabResult|txtTit|DanfeNFCe/i.test(raw)) return;
+    const decoded = decodeEmbeddedHtml(raw);
+    const tables = decoded.match(/<table\b[\s\S]*?id=["']tabResult["'][\s\S]*?<\/table>/gi) || [];
+    for (const table of tables) {
+      const parsed = parseSpStyle(cheerio.load(table));
+      if (parsed.length > best.length) best = parsed;
+    }
+  });
+  return best;
+}
+
 function parseGenericTables($: cheerio.CheerioAPI) {
   const items: Array<{name:string;quantity:number;unit:string;unitPrice:number;total:number}> = [];
   $('table tr').each((_, el) => {
@@ -109,8 +142,10 @@ export async function POST(req: NextRequest) {
     if (html.length < 200) return NextResponse.json({ error: 'O portal retornou uma página vazia ou protegida.' }, { status: 422 });
 
     const $ = cheerio.load(html);
-    let items = parseSpStyle($);
-    let parser = 'Layout DANFE NFC-e';
+    const directItems = parseSpStyle($);
+    const embeddedItems = parseEmbeddedDanfe($);
+    let items = embeddedItems.length > directItems.length ? embeddedItems : directItems;
+    let parser = embeddedItems.length > directItems.length ? 'Layout DANFE NFC-e (conteúdo completo)' : 'Layout DANFE NFC-e';
     if (!items.length) { items = parseGenericTables($); parser = 'Leitor genérico de tabela'; }
 
     const bodyText = cleanText($('body').text());
@@ -129,6 +164,9 @@ export async function POST(req: NextRequest) {
       total = money(m?.[1]);
     }
     if (!total && items.length) total = items.reduce((sum, item) => sum + item.total, 0);
+    const itemsTotal = items.reduce((sum, item) => sum + item.total, 0);
+    const totalDifference = total > 0 ? Math.abs(total - itemsTotal) : 0;
+    const incompleteItems = Boolean(total > 0 && items.length && totalDifference > Math.max(2, total * 0.08));
 
     if (!items.length) {
       return NextResponse.json({
@@ -144,6 +182,9 @@ export async function POST(req: NextRequest) {
       date: date || new Date().toISOString().slice(0,10),
       accessKey,
       total,
+      itemsTotal,
+      incompleteItems,
+      warning: incompleteItems ? 'A soma dos itens encontrados não bate com o total da nota. O portal pode ter escondido parte dos produtos; confira antes de importar.' : undefined,
       items,
     });
   } catch (error: any) {
