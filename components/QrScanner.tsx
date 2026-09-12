@@ -83,21 +83,15 @@ export default function QrScanner({onResult}:{onResult:(value:string)=>void}) {
         setActive(false);
       };
 
-      try{
-        // html5-qrcode aceita facingMode como string (ou { exact: ... }).
-        // { ideal: 'environment' } causa erro em algumas versões da biblioteca.
-        await s.start({facingMode:'environment'} as any,config,success,()=>{});
-      }catch(firstError){
-        // Fallback: tenta localizar explicitamente a câmera traseira pelo id.
-        try{
-          const cameras=await Html5Qrcode.getCameras();
-          if(!cameras.length)throw firstError;
-          const preferred=[...cameras].reverse().find(c=>/back|rear|traseira|environment/i.test(c.label))||cameras[cameras.length-1];
-          await s.start(preferred.id,config,success,()=>{});
-        }catch(fallbackError){
-          throw fallbackError || firstError;
-        }
-      }
+      // Não usamos facingMode aqui. Em algumas combinações de Safari/iOS +
+      // html5-qrcode 2.3.8 ele pode chegar à biblioteca como um objeto inválido.
+      // getCameras() pede a permissão e nos dá um deviceId real; iniciar pelo id
+      // é o caminho recomendado e elimina de vez o erro de facingMode.
+      const cameras=await Html5Qrcode.getCameras();
+      if(!cameras.length)throw new Error('Nenhuma câmera disponível neste aparelho.');
+      const preferred=[...cameras].reverse().find(c=>/back|rear|traseira|environment|wide|0\.5x|1x/i.test(c.label||''))
+        || cameras[cameras.length-1];
+      await s.start(preferred.id,config,success,()=>{});
     }catch(e:any){
       await dispose();
       setActive(false);

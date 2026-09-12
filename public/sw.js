@@ -1,4 +1,4 @@
-const CACHE = 'confeitaria-sweet-v2';
+const CACHE = 'confeitaria-sweet-v4';
 const CORE = ['/', '/logo.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', event => {

@@ -57,6 +57,62 @@ function normalizeDate(text: string) {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : undefined;
 }
 
+
+function extractInvoiceTotal($: cheerio.CheerioAPI, bodyText: string, itemsTotal: number) {
+  const preferred: number[] = [];
+  const secondary: number[] = [];
+
+  // No DANFE/NFC-e usado em SP, #totalNota contém várias linhas com a mesma
+  // classe/ID: uma é "Qtd. total de itens" e outra é "Valor a pagar R$".
+  // Nunca podemos pegar .totalNumb solto, pois ele também representa quantidade
+  // e outros valores da página.
+  $('#totalNota #linhaTotal, #totalNota [id="linhaTotal"], #totalNota .linhaTotal').each((_, el) => {
+    const rowText = cleanText($(el).text());
+    if (!rowText) return;
+    const value = money(rowText);
+    if (!(value > 0)) return;
+    if (/valor\s+a\s+pagar|total\s+a\s+pagar/i.test(rowText)) preferred.push(value);
+    else if (/valor\s+total|total\s+da\s+nota/i.test(rowText)) secondary.push(value);
+  });
+
+  // Alguns layouts usam outro container, mas mantêm o texto do rótulo.
+  if (!preferred.length) {
+    $('[id*=total], [class*=total]').each((_, el) => {
+      const rowText = cleanText($(el).text());
+      if (!/valor\s+a\s+pagar|total\s+a\s+pagar/i.test(rowText)) return;
+      const value = money(rowText);
+      if (value > 0) preferred.push(value);
+    });
+  }
+
+  // Fallback textual. Procuramos o rótulo e capturamos o valor imediatamente
+  // depois dele, em vez de "qualquer total" perto do primeiro produto.
+  const textPatterns = [
+    /(?:Valor\s+a\s+pagar|Total\s+a\s+pagar)\s*(?:R\$)?\s*[:\-]?\s*([\d.]+,\d{2})/i,
+    /(?:Valor\s+total(?:\s+da\s+nota)?|Total\s+da\s+nota)\s*(?:R\$)?\s*[:\-]?\s*([\d.]+,\d{2})/i,
+  ];
+  for (const pattern of textPatterns) {
+    const match = bodyText.match(pattern);
+    const value = money(match?.[1]);
+    if (value > 0) {
+      if (/pagar/i.test(pattern.source)) preferred.push(value);
+      else secondary.push(value);
+    }
+  }
+
+  const unique = [...new Set([...preferred, ...secondary].map(v => Math.round(v * 100) / 100))];
+  if (unique.length) {
+    // Se temos itens, entre candidatos plausíveis preferimos o que mais se
+    // aproxima da soma dos produtos. Isso também evita escolher "Qtd. itens".
+    if (itemsTotal > 0) {
+      return unique.sort((a, b) => Math.abs(a - itemsTotal) - Math.abs(b - itemsTotal))[0];
+    }
+    return unique[0];
+  }
+
+  return itemsTotal > 0 ? itemsTotal : 0;
+}
+
 function parseSpStyle($: cheerio.CheerioAPI) {
   const items: Array<{name:string;quantity:number;unit:string;unitPrice:number;total:number}> = [];
   $('[id^="Item"], #tabResult tbody tr, table#tabResult tr').each((_, el) => {
@@ -174,18 +230,8 @@ export async function POST(req: NextRequest) {
     const date = normalizeDate(bodyText);
     const accessKey = accessKeyFromUrl(rawUrl) || bodyText.match(/(?:\d[ .-]?){44}/)?.[0]?.replace(/\D/g, '');
 
-    const totalSelectors = ['#linhaTotal .valor', '.totalNumb', '#totalNota', '.valorTotal', '[id*=Total] .valor'];
-    let total = 0;
-    for (const sel of totalSelectors) {
-      const value = money(cleanText($(sel).last().text()));
-      if (value > 0) { total = value; break; }
-    }
-    if (!total) {
-      const m = bodyText.match(/(?:Valor\s+total|Total\s+a\s+pagar|TOTAL)[^0-9]{0,20}(?:R\$)?\s*([\d.,]+)/i);
-      total = money(m?.[1]);
-    }
-    if (!total && items.length) total = items.reduce((sum, item) => sum + item.total, 0);
     const itemsTotal = items.reduce((sum, item) => sum + item.total, 0);
+    const total = extractInvoiceTotal($, bodyText, itemsTotal);
     const totalDifference = total > 0 ? Math.abs(total - itemsTotal) : 0;
     const incompleteItems = Boolean(total > 0 && items.length && totalDifference > Math.max(2, total * 0.08));
 
